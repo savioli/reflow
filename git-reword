@@ -79,7 +79,7 @@ build_prompt() {
 You are given a git log for a software project. For EVERY commit listed, write a new commit message that:
 - Uses imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
 - Is at most 5 words
-- Is based on the files changed shown in the stats, not the old message
+- Is based solely on the files changed shown in the stats
 
 Return ONLY a JSON array, no explanation, no markdown fences, nothing else:
 [{"hash":"<full_hash>","message":"<new message>"},...]
@@ -138,9 +138,9 @@ if [ "$AUTO" = true ]; then
 
     echo "Collecting commit stats..."
     if [ "$SINCE" = "--root" ]; then
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat)
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --stat)
     else
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat "${SINCE}..HEAD")
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --stat "${SINCE}..HEAD")
     fi
     PROMPT=$(build_prompt "$LOG_DATA")
 
