@@ -78,8 +78,11 @@ You are given a git log for a software project. For EVERY commit listed, write a
 - Is at most 5 words
 - Is based on the files changed shown in the stats, not the old message
 
-Return ONLY a plain list in this exact format, one line per commit, nothing else:
-{full_hash} ||| {new message}
+Return ONLY a JSON array, no explanation, no markdown fences, nothing else:
+[{"hash":"<full_hash>","message":"<new message>"},...]
+
+Example:
+[{"hash":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2","message":"Add user login page"}]
 
 Git log:
 ${log_data}
@@ -89,8 +92,11 @@ EOF
 # ── Shared: build messages file from API text ─────────────────────────────────
 parse_api_response() {
     local api_text="$1"
+    local json
+    # strip markdown code fences if the model wraps output in ```json ... ```
+    json=$(echo "$api_text" | sed 's/^```[a-z]*//;s/^```//' | tr -d '\r')
     for hash in "${HASHES[@]}"; do
-        msg=$(echo "$api_text" | grep "^${hash}" | sed 's/^[^ ]* ||| //') || true
+        msg=$(echo "$json" | jq -r --arg h "$hash" '.[] | select(.hash == $h) | .message' 2>/dev/null) || true
         if [ -z "$msg" ]; then
             msg=$(git log -1 --format="%s" "$hash")
         fi
