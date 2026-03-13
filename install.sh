@@ -26,6 +26,7 @@ add_to_path() {
 }
 
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    add_to_path "$HOME/.zprofile"
     add_to_path "$HOME/.zshrc"
     add_to_path "$HOME/.bashrc"
     export PATH="$BIN_DIR:$PATH"
