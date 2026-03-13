@@ -33,10 +33,11 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
 fi
 
 # ── Collect commits oldest → newest ──────────────────────────────────────────
+HASHES=()
 if [ "$SINCE" = "--root" ]; then
-    mapfile -t HASHES < <(git log --reverse --format="%H")
+    while IFS= read -r line; do HASHES+=("$line"); done < <(git log --reverse --format="%H")
 else
-    mapfile -t HASHES < <(git log --reverse --format="%H" "${SINCE}..HEAD")
+    while IFS= read -r line; do HASHES+=("$line"); done < <(git log --reverse --format="%H" "${SINCE}..HEAD")
 fi
 
 COUNT=${#HASHES[@]}
