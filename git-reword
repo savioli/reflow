@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# git-reword — reword commit messages interactively or via Claude API
+#
+# Usage:
+#   git reword                    reword all commits from root
+#   git reword HEAD~5             reword last 5 commits
+#   git reword --auto             auto-generate messages via Claude API (all commits)
+#   git reword HEAD~5 --auto      auto-generate messages via Claude API (range)
+#
+# Requirements for --auto: ANTHROPIC_API_KEY env var must be set
+
+set -euo pipefail
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+SINCE="--root"
+AUTO=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --auto) AUTO=true ;;
+        --help|-h)
+            sed -n '2,10p' "$0" | sed 's/^# //'
+            exit 0
+            ;;
+        *) SINCE="$arg" ;;
+    esac
+done
+
+# ── Validate we're inside a git repo ─────────────────────────────────────────
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: not inside a git repository." >&2
+    exit 1
+fi
+
+# ── Collect commits oldest → newest ──────────────────────────────────────────
+if [ "$SINCE" = "--root" ]; then
+    mapfile -t HASHES < <(git log --reverse --format="%H")
+else
+    mapfile -t HASHES < <(git log --reverse --format="%H" "${SINCE}..HEAD")
+fi
+
+COUNT=${#HASHES[@]}
+if [ "$COUNT" -eq 0 ]; then
+    echo "No commits to reword."
+    exit 0
+fi
+
+echo "Rewording $COUNT commit(s)..."
+
+# ── Build messages file ───────────────────────────────────────────────────────
+MESSAGES_FILE=$(mktemp)
+COUNTER_FILE=$(mktemp)
+SEQ_EDITOR=$(mktemp)
+MSG_EDITOR=$(mktemp)
+echo 0 > "$COUNTER_FILE"
+
+cleanup() { rm -f "$MESSAGES_FILE" "$COUNTER_FILE" "$SEQ_EDITOR" "$MSG_EDITOR"; }
+trap cleanup EXIT
+
+if [ "$AUTO" = true ]; then
+    # ── Auto mode: call Claude API ────────────────────────────────────────────
+    if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+        echo "Error: ANTHROPIC_API_KEY is not set. Export it before using --auto." >&2
+        exit 1
+    fi
+
+    if ! command -v curl &> /dev/null; then
+        echo "Error: curl is required for --auto mode." >&2
+        exit 1
+    fi
+
+    echo "Collecting commit stats..."
+    LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat "${SINCE}" 2>/dev/null || \
+               git log --reverse --format="COMMIT:%H|%s" --stat)
+
+    PROMPT="You are given a git log for a software project. For EVERY commit listed, write a new commit message that:
+- Uses imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
+- Is at most 5 words
+- Is based on the files changed shown in the stats, not the old message
+
+Return ONLY a plain list in this exact format, one line per commit, nothing else:
+{full_hash} ||| {new message}
+
+Git log:
+${LOG_DATA}"
+
+    echo "Calling Claude API..."
+    RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+        -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "content-type: application/json" \
+        -d "$(jq -n \
+            --arg model "claude-haiku-4-5-20251001" \
+            --arg prompt "$PROMPT" \
+            '{model: $model, max_tokens: 4096, messages: [{role: "user", content: $prompt}]}'
+        )")
+
+    if ! echo "$RESPONSE" | jq -e '.content[0].text' > /dev/null 2>&1; then
+        echo "Error: Claude API request failed." >&2
+        echo "$RESPONSE" | jq . >&2
+        exit 1
+    fi
+
+    API_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+
+    # Build messages file in commit order
+    for hash in "${HASHES[@]}"; do
+        msg=$(echo "$API_TEXT" | grep "^${hash}" | sed 's/^[^ ]* ||| //')
+        if [ -z "$msg" ]; then
+            msg=$(git log -1 --format="%s" "$hash")
+        fi
+        echo "$msg" >> "$MESSAGES_FILE"
+    done
+
+    echo ""
+    echo "Generated messages:"
+    echo "───────────────────"
+    paste <(printf '%s\n' "${HASHES[@]}" | cut -c1-7) "$MESSAGES_FILE" | \
+        awk '{printf "  %s  %s\n", $1, $2}'
+    echo ""
+    read -rp "Apply these messages? [Y/n] " confirm
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+else
+    # ── Interactive mode: prompt for each commit ──────────────────────────────
+    for hash in "${HASHES[@]}"; do
+        echo ""
+        echo "──────────────────────────────────────────"
+        echo "Commit: $(echo "$hash" | cut -c1-7)"
+        git log -1 --format="Current: %s" "$hash"
+        echo ""
+        git diff-tree --no-commit-id -r --stat "$hash"
+        echo ""
+        read -rp "New message (≤5 words, blank = keep): " msg
+        if [ -z "$msg" ]; then
+            msg=$(git log -1 --format="%s" "$hash")
+        fi
+        echo "$msg" >> "$MESSAGES_FILE"
+    done
+fi
+
+# ── Build rebase automation scripts ──────────────────────────────────────────
+printf "#!/bin/bash\nsed -i '' 's/^pick/reword/' \"\$1\"\n" > "$SEQ_EDITOR"
+chmod +x "$SEQ_EDITOR"
+
+cat > "$MSG_EDITOR" << SCRIPT
+#!/bin/bash
+count=\$(cat "$COUNTER_FILE")
+count=\$((count + 1))
+echo \$count > "$COUNTER_FILE"
+sed -n "\${count}p" "$MESSAGES_FILE" > "\$1"
+SCRIPT
+chmod +x "$MSG_EDITOR"
+
+# ── Run the rebase ────────────────────────────────────────────────────────────
+if [ "$SINCE" = "--root" ]; then
+    GIT_SEQUENCE_EDITOR="$SEQ_EDITOR" GIT_EDITOR="$MSG_EDITOR" git rebase -i --root
+else
+    GIT_SEQUENCE_EDITOR="$SEQ_EDITOR" GIT_EDITOR="$MSG_EDITOR" git rebase -i "$SINCE"
+fi
+
+echo ""
+echo "Done. $COUNT commit(s) reworded."
