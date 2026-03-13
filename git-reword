@@ -96,14 +96,23 @@ EOF
 parse_api_response() {
     local api_text="$1"
     local json
-    # strip markdown code fences if the model wraps output in ```json ... ```
-    json=$(echo "$api_text" | sed 's/^```[a-z]*//;s/^```//' | tr -d '\r')
+    # collapse to single line and extract the JSON array (handles preamble, fences, trailing text)
+    json=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]') || json="[]"
+    local i=0
     for hash in "${HASHES[@]}"; do
+        local msg=""
+        # try matching by full hash
         msg=$(echo "$json" | jq -r --arg h "$hash" '.[] | select(.hash == $h) | .message' 2>/dev/null) || true
+        # fall back to positional match (model may shorten hashes or omit them)
+        if [ -z "$msg" ]; then
+            msg=$(echo "$json" | jq -r --argjson i "$i" '.[$i].message // empty' 2>/dev/null) || true
+        fi
+        # last resort: keep original
         if [ -z "$msg" ]; then
             msg=$(git log -1 --format="%s" "$hash")
         fi
         echo "$msg" >> "$MESSAGES_FILE"
+        i=$((i + 1))
     done
 }
 
