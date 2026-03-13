@@ -178,7 +178,7 @@ if [ "$AUTO" = true ]; then
         echo "Calling Claude API for $COUNT commit(s)..."
     fi
 
-    local i=0
+    i=0
     for hash in "${HASHES[@]}"; do
         i=$((i + 1))
         printf "  [%d/%d] %s\n" "$i" "$COUNT" "$(echo "$hash" | cut -c1-7)"
