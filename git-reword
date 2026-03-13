@@ -138,9 +138,9 @@ if [ "$AUTO" = true ]; then
 
     echo "Collecting commit stats..."
     if [ "$SINCE" = "--root" ]; then
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --stat)
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --patch)
     else
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --stat "${SINCE}..HEAD")
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --patch "${SINCE}..HEAD")
     fi
     PROMPT=$(build_prompt "$LOG_DATA")
 
