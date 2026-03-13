@@ -18,10 +18,10 @@ set -euo pipefail
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 SINCE="--root"
-AUTO=false
 OLLAMA_MODEL="${OLLAMA_MODEL:-}"
 USE_OLLAMA=false
-if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; fi
+AUTO=false
+if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; AUTO=true; fi
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 for arg in "$@"; do
