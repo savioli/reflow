@@ -136,12 +136,12 @@ if [ "$AUTO" = true ]; then
         exit 1
     fi
 
-    echo "Collecting commit stats..."
-    if [ "$SINCE" = "--root" ]; then
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --patch)
-    else
-        LOG_DATA=$(git log --reverse --format="COMMIT:%H" --patch "${SINCE}..HEAD")
-    fi
+    echo "Collecting commit diffs..."
+    LOG_DATA=""
+    for hash in "${HASHES[@]}"; do
+        LOG_DATA+="COMMIT:${hash}"$'\n'
+        LOG_DATA+=$(git diff-tree --no-commit-id -p "$hash")$'\n'
+    done
     PROMPT=$(build_prompt "$LOG_DATA")
 
     if [ "$USE_OLLAMA" = true ]; then
