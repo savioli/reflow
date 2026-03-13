@@ -12,6 +12,7 @@
 # Requirements:
 #   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
 #   --auto --ollama:  Ollama running at localhost:11434, curl, jq
+#                     OLLAMA_MODEL env var sets default model (fallback: llama3.2)
 
 set -euo pipefail
 
@@ -19,7 +20,7 @@ set -euo pipefail
 SINCE="--root"
 AUTO=false
 USE_OLLAMA=false
-OLLAMA_MODEL="llama3.2"
+OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 for arg in "$@"; do
     case "$arg" in
