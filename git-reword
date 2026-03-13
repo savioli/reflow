@@ -8,6 +8,7 @@
 #   git reword HEAD~5 --auto           auto-generate via Claude API (range)
 #   git reword --auto --ollama         auto-generate via Ollama, default model
 #   git reword --auto --ollama=llama3.2  auto-generate via Ollama, specific model
+#   git reword --auto --debug            print raw AI output before parsing
 #
 # Requirements:
 #   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
@@ -21,12 +22,14 @@ SINCE="--root"
 OLLAMA_MODEL="${OLLAMA_MODEL:-}"
 USE_OLLAMA=false
 AUTO=false
+DEBUG=false
 if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; AUTO=true; fi
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO=true ;;
+        --debug) DEBUG=true ;;
         --ollama) USE_OLLAMA=true ;;
         --ollama=*) USE_OLLAMA=true; OLLAMA_MODEL="${arg#--ollama=}" ;;
         --help|-h)
@@ -193,6 +196,14 @@ if [ "$AUTO" = true ]; then
         fi
 
         API_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+    fi
+
+    if [ "$DEBUG" = true ]; then
+        echo ""
+        echo "── Raw AI output ──────────────────────────────"
+        echo "$API_TEXT"
+        echo "───────────────────────────────────────────────"
+        echo ""
     fi
 
     parse_api_response "$API_TEXT"
