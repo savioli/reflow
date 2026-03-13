@@ -90,7 +90,7 @@ EOF
 parse_api_response() {
     local api_text="$1"
     for hash in "${HASHES[@]}"; do
-        msg=$(echo "$api_text" | grep "^${hash}" | sed 's/^[^ ]* ||| //')
+        msg=$(echo "$api_text" | grep "^${hash}" | sed 's/^[^ ]* ||| //') || true
         if [ -z "$msg" ]; then
             msg=$(git log -1 --format="%s" "$hash")
         fi
