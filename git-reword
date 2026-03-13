@@ -72,48 +72,65 @@ echo 0 > "$COUNTER_FILE"
 cleanup() { rm -f "$MESSAGES_FILE" "$COUNTER_FILE" "$SEQ_EDITOR" "$MSG_EDITOR"; }
 trap cleanup EXIT
 
-# ── Shared: build prompt and collect log data ─────────────────────────────────
+# ── Shared: build prompt for a single commit diff ────────────────────────────
 build_prompt() {
-    local log_data="$1"
+    local diff="$1"
     cat <<EOF
-You are given a git log for a software project. For EVERY commit listed, write a new commit message that:
-- Uses imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
-- Is at most 5 words
-- Is based solely on the files changed shown in the stats
+Write a git commit message for the following diff.
+- Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
+- At most 5 words
+- Based solely on the lines changed
 
-Return ONLY a JSON array, no explanation, no markdown fences, nothing else:
-[{"hash":"<full_hash>","message":"<new message>"},...]
+Reply with ONLY the commit message, nothing else.
 
-Example:
-[{"hash":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2","message":"Add user login page"}]
-
-Git log:
-${log_data}
+Diff:
+${diff}
 EOF
 }
 
-# ── Shared: build messages file from API text ─────────────────────────────────
-parse_api_response() {
-    local api_text="$1"
-    local json
-    # collapse to single line and extract the JSON array (handles preamble, fences, trailing text)
-    json=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]') || json="[]"
-    local i=0
-    for hash in "${HASHES[@]}"; do
-        local msg=""
-        # try matching by full hash
-        msg=$(echo "$json" | jq -r --arg h "$hash" '.[] | select(.hash == $h) | .message' 2>/dev/null) || true
-        # fall back to positional match (model may shorten hashes or omit them)
-        if [ -z "$msg" ]; then
-            msg=$(echo "$json" | jq -r --argjson i "$i" '.[$i].message // empty' 2>/dev/null) || true
+# ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
+call_api() {
+    local hash="$1"
+    local diff
+    diff=$(git diff-tree --no-commit-id -p "$hash")
+    local prompt
+    prompt=$(build_prompt "$diff")
+    local api_text=""
+
+    if [ "$USE_OLLAMA" = true ]; then
+        local response
+        response=$(curl -s "${OLLAMA_URL}/api/chat" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" \
+                '{model: $model, stream: false, messages: [{role: "user", content: $prompt}]}'
+            )")
+        if echo "$response" | jq -e '.message.content' > /dev/null 2>&1; then
+            api_text=$(echo "$response" | jq -r '.message.content')
         fi
-        # last resort: keep original
-        if [ -z "$msg" ]; then
-            msg=$(git log -1 --format="%s" "$hash")
+    else
+        local response
+        response=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$prompt" \
+                '{model: $model, max_tokens: 64, messages: [{role: "user", content: $prompt}]}'
+            )")
+        if echo "$response" | jq -e '.content[0].text' > /dev/null 2>&1; then
+            api_text=$(echo "$response" | jq -r '.content[0].text')
         fi
-        echo "$msg" >> "$MESSAGES_FILE"
-        i=$((i + 1))
-    done
+    fi
+
+    if [ "$DEBUG" = true ]; then
+        echo "  [debug] $(echo "$hash" | cut -c1-7): $api_text"
+    fi
+
+    local msg
+    msg=$(echo "$api_text" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -1)
+    if [ -z "$msg" ]; then
+        msg=$(git log -1 --format="%s" "$hash")
+    fi
+    echo "$msg" >> "$MESSAGES_FILE"
 }
 
 # ── Shared: show preview and confirm ─────────────────────────────────────────
@@ -145,77 +162,29 @@ if [ "$AUTO" = true ]; then
         exit 1
     fi
 
-    echo "Collecting commit diffs..."
-    LOG_DATA=""
-    for hash in "${HASHES[@]}"; do
-        LOG_DATA+="COMMIT:${hash}"$'\n'
-        LOG_DATA+=$(git diff-tree --no-commit-id -p "$hash")$'\n'
-    done
-    PROMPT=$(build_prompt "$LOG_DATA")
-
     if [ "$USE_OLLAMA" = true ]; then
-        # ── Ollama mode ───────────────────────────────────────────────────────
         OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
-
         if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
             echo "Error: Ollama is not running at ${OLLAMA_URL}." >&2
             echo "Start it with: ollama serve" >&2
             exit 1
         fi
-
-        echo "Calling Ollama (${OLLAMA_MODEL})..."
-        RESPONSE=$(curl -s "${OLLAMA_URL}/api/chat" \
-            -H "content-type: application/json" \
-            -d "$(jq -n \
-                --arg model "$OLLAMA_MODEL" \
-                --arg prompt "$PROMPT" \
-                '{model: $model, stream: false, messages: [{role: "user", content: $prompt}]}'
-            )")
-
-        if ! echo "$RESPONSE" | jq -e '.message.content' > /dev/null 2>&1; then
-            echo "Error: Ollama request failed." >&2
-            echo "$RESPONSE" | jq . >&2
-            exit 1
-        fi
-
-        API_TEXT=$(echo "$RESPONSE" | jq -r '.message.content')
-
+        echo "Calling Ollama (${OLLAMA_MODEL}) for $COUNT commit(s)..."
     else
-        # ── Claude API mode ───────────────────────────────────────────────────
         if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
             echo "Error: ANTHROPIC_API_KEY is not set. Export it before using --auto." >&2
             exit 1
         fi
-
-        echo "Calling Claude API..."
-        RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d "$(jq -n \
-                --arg model "claude-haiku-4-5-20251001" \
-                --arg prompt "$PROMPT" \
-                '{model: $model, max_tokens: 4096, messages: [{role: "user", content: $prompt}]}'
-            )")
-
-        if ! echo "$RESPONSE" | jq -e '.content[0].text' > /dev/null 2>&1; then
-            echo "Error: Claude API request failed." >&2
-            echo "$RESPONSE" | jq . >&2
-            exit 1
-        fi
-
-        API_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+        echo "Calling Claude API for $COUNT commit(s)..."
     fi
 
-    if [ "$DEBUG" = true ]; then
-        echo ""
-        echo "── Raw AI output ──────────────────────────────"
-        echo "$API_TEXT"
-        echo "───────────────────────────────────────────────"
-        echo ""
-    fi
+    local i=0
+    for hash in "${HASHES[@]}"; do
+        i=$((i + 1))
+        printf "  [%d/%d] %s\n" "$i" "$COUNT" "$(echo "$hash" | cut -c1-7)"
+        call_api "$hash"
+    done
 
-    parse_api_response "$API_TEXT"
     confirm_messages
 
 else
