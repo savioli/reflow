@@ -1,25 +1,33 @@
 #!/usr/bin/env bash
-# git-reword — reword commit messages interactively or via Claude API
+# git-reword — reword commit messages interactively or via AI
 #
 # Usage:
-#   git reword                    reword all commits from root
-#   git reword HEAD~5             reword last 5 commits
-#   git reword --auto             auto-generate messages via Claude API (all commits)
-#   git reword HEAD~5 --auto      auto-generate messages via Claude API (range)
+#   git reword                         reword all commits from root
+#   git reword HEAD~5                  reword last 5 commits
+#   git reword --auto                  auto-generate via Claude API (all commits)
+#   git reword HEAD~5 --auto           auto-generate via Claude API (range)
+#   git reword --auto --ollama         auto-generate via Ollama, default model
+#   git reword --auto --ollama=llama3.2  auto-generate via Ollama, specific model
 #
-# Requirements for --auto: ANTHROPIC_API_KEY env var must be set
+# Requirements:
+#   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
+#   --auto --ollama:  Ollama running at localhost:11434, curl, jq
 
 set -euo pipefail
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 SINCE="--root"
 AUTO=false
+USE_OLLAMA=false
+OLLAMA_MODEL="llama3.2"
 
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO=true ;;
+        --ollama) USE_OLLAMA=true ;;
+        --ollama=*) USE_OLLAMA=true; OLLAMA_MODEL="${arg#--ollama=}" ;;
         --help|-h)
-            sed -n '2,10p' "$0" | sed 's/^# //'
+            sed -n '2,12p' "$0" | sed 's/^# //'
             exit 0
             ;;
         *) SINCE="$arg" ;;
@@ -58,23 +66,11 @@ echo 0 > "$COUNTER_FILE"
 cleanup() { rm -f "$MESSAGES_FILE" "$COUNTER_FILE" "$SEQ_EDITOR" "$MSG_EDITOR"; }
 trap cleanup EXIT
 
-if [ "$AUTO" = true ]; then
-    # ── Auto mode: call Claude API ────────────────────────────────────────────
-    if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-        echo "Error: ANTHROPIC_API_KEY is not set. Export it before using --auto." >&2
-        exit 1
-    fi
-
-    if ! command -v curl &> /dev/null; then
-        echo "Error: curl is required for --auto mode." >&2
-        exit 1
-    fi
-
-    echo "Collecting commit stats..."
-    LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat "${SINCE}" 2>/dev/null || \
-               git log --reverse --format="COMMIT:%H|%s" --stat)
-
-    PROMPT="You are given a git log for a software project. For EVERY commit listed, write a new commit message that:
+# ── Shared: build prompt and collect log data ─────────────────────────────────
+build_prompt() {
+    local log_data="$1"
+    cat <<EOF
+You are given a git log for a software project. For EVERY commit listed, write a new commit message that:
 - Uses imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
 - Is at most 5 words
 - Is based on the files changed shown in the stats, not the old message
@@ -83,47 +79,115 @@ Return ONLY a plain list in this exact format, one line per commit, nothing else
 {full_hash} ||| {new message}
 
 Git log:
-${LOG_DATA}"
+${log_data}
+EOF
+}
 
-    echo "Calling Claude API..."
-    RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
-        -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-        -H "anthropic-version: 2023-06-01" \
-        -H "content-type: application/json" \
-        -d "$(jq -n \
-            --arg model "claude-haiku-4-5-20251001" \
-            --arg prompt "$PROMPT" \
-            '{model: $model, max_tokens: 4096, messages: [{role: "user", content: $prompt}]}'
-        )")
-
-    if ! echo "$RESPONSE" | jq -e '.content[0].text' > /dev/null 2>&1; then
-        echo "Error: Claude API request failed." >&2
-        echo "$RESPONSE" | jq . >&2
-        exit 1
-    fi
-
-    API_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text')
-
-    # Build messages file in commit order
+# ── Shared: build messages file from API text ─────────────────────────────────
+parse_api_response() {
+    local api_text="$1"
     for hash in "${HASHES[@]}"; do
-        msg=$(echo "$API_TEXT" | grep "^${hash}" | sed 's/^[^ ]* ||| //')
+        msg=$(echo "$api_text" | grep "^${hash}" | sed 's/^[^ ]* ||| //')
         if [ -z "$msg" ]; then
             msg=$(git log -1 --format="%s" "$hash")
         fi
         echo "$msg" >> "$MESSAGES_FILE"
     done
+}
 
+# ── Shared: show preview and confirm ─────────────────────────────────────────
+confirm_messages() {
     echo ""
     echo "Generated messages:"
     echo "───────────────────"
-    paste <(printf '%s\n' "${HASHES[@]}" | cut -c1-7) "$MESSAGES_FILE" | \
-        awk '{printf "  %s  %s\n", $1, $2}'
+    local i=0
+    for hash in "${HASHES[@]}"; do
+        i=$((i + 1))
+        msg=$(sed -n "${i}p" "$MESSAGES_FILE")
+        printf "  %s  %s\n" "$(echo "$hash" | cut -c1-7)" "$msg"
+    done
     echo ""
     read -rp "Apply these messages? [Y/n] " confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo "Aborted."
         exit 0
     fi
+}
+
+if [ "$AUTO" = true ]; then
+    if ! command -v curl &> /dev/null; then
+        echo "Error: curl is required for --auto mode." >&2
+        exit 1
+    fi
+    if ! command -v jq &> /dev/null; then
+        echo "Error: jq is required for --auto mode." >&2
+        exit 1
+    fi
+
+    echo "Collecting commit stats..."
+    if [ "$SINCE" = "--root" ]; then
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat)
+    else
+        LOG_DATA=$(git log --reverse --format="COMMIT:%H|%s" --stat "${SINCE}..HEAD")
+    fi
+    PROMPT=$(build_prompt "$LOG_DATA")
+
+    if [ "$USE_OLLAMA" = true ]; then
+        # ── Ollama mode ───────────────────────────────────────────────────────
+        OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
+
+        if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
+            echo "Error: Ollama is not running at ${OLLAMA_URL}." >&2
+            echo "Start it with: ollama serve" >&2
+            exit 1
+        fi
+
+        echo "Calling Ollama (${OLLAMA_MODEL})..."
+        RESPONSE=$(curl -s "${OLLAMA_URL}/api/chat" \
+            -H "content-type: application/json" \
+            -d "$(jq -n \
+                --arg model "$OLLAMA_MODEL" \
+                --arg prompt "$PROMPT" \
+                '{model: $model, stream: false, messages: [{role: "user", content: $prompt}]}'
+            )")
+
+        if ! echo "$RESPONSE" | jq -e '.message.content' > /dev/null 2>&1; then
+            echo "Error: Ollama request failed." >&2
+            echo "$RESPONSE" | jq . >&2
+            exit 1
+        fi
+
+        API_TEXT=$(echo "$RESPONSE" | jq -r '.message.content')
+
+    else
+        # ── Claude API mode ───────────────────────────────────────────────────
+        if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "Error: ANTHROPIC_API_KEY is not set. Export it before using --auto." >&2
+            exit 1
+        fi
+
+        echo "Calling Claude API..."
+        RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n \
+                --arg model "claude-haiku-4-5-20251001" \
+                --arg prompt "$PROMPT" \
+                '{model: $model, max_tokens: 4096, messages: [{role: "user", content: $prompt}]}'
+            )")
+
+        if ! echo "$RESPONSE" | jq -e '.content[0].text' > /dev/null 2>&1; then
+            echo "Error: Claude API request failed." >&2
+            echo "$RESPONSE" | jq . >&2
+            exit 1
+        fi
+
+        API_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+    fi
+
+    parse_api_response "$API_TEXT"
+    confirm_messages
 
 else
     # ── Interactive mode: prompt for each commit ──────────────────────────────
