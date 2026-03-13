@@ -10,6 +10,11 @@
 #   git reword --auto --ollama=llama3.2  auto-generate via Ollama, specific model
 #   git reword --auto --debug            print raw AI output before parsing
 #
+# Git config (git config reword.<key> <value>):
+#   reword.ollamaModel   Ollama model name (overridden by OLLAMA_MODEL or --ollama=)
+#   reword.ollamaUrl     Ollama base URL (overridden by OLLAMA_HOST)
+#   reword.prompt        Custom prompt template; use {diff} as placeholder for the diff
+#
 # Requirements:
 #   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
 #   --auto --ollama:  Ollama running at localhost:11434, curl, jq
@@ -24,7 +29,6 @@ USE_OLLAMA=false
 AUTO=false
 DEBUG=false
 if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; AUTO=true; fi
-OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 for arg in "$@"; do
     case "$arg" in
@@ -45,6 +49,22 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     echo "Error: not inside a git repository." >&2
     exit 1
 fi
+
+# ── Load git config (lowest priority — CLI flags and env vars override) ───────
+GIT_CFG_OLLAMA_MODEL=$(git config --get reword.ollamaModel 2>/dev/null) || true
+GIT_CFG_OLLAMA_URL=$(git config --get reword.ollamaUrl 2>/dev/null) || true
+GIT_CFG_PROMPT=$(git config --get reword.prompt 2>/dev/null) || true
+
+# Apply git config for model (env var > git config > default)
+if [ -z "$OLLAMA_MODEL" ] && [ -n "$GIT_CFG_OLLAMA_MODEL" ]; then
+    OLLAMA_MODEL="$GIT_CFG_OLLAMA_MODEL"
+    USE_OLLAMA=true
+    AUTO=true
+fi
+OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
+
+# Apply git config for URL (env var > git config > default)
+OLLAMA_URL="${OLLAMA_HOST:-${GIT_CFG_OLLAMA_URL:-http://localhost:11434}}"
 
 # ── Collect commits oldest → newest ──────────────────────────────────────────
 HASHES=()
@@ -75,6 +95,10 @@ trap cleanup EXIT
 # ── Shared: build prompt for a single commit diff ────────────────────────────
 build_prompt() {
     local diff="$1"
+    if [ -n "$GIT_CFG_PROMPT" ]; then
+        echo "${GIT_CFG_PROMPT//\{diff\}/$diff}"
+        return
+    fi
     cat <<EOF
 Write a git commit message for the following diff.
 - Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
@@ -172,7 +196,6 @@ if [ "$AUTO" = true ]; then
     fi
 
     if [ "$USE_OLLAMA" = true ]; then
-        OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
         if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
             echo "Error: Ollama is not running at ${OLLAMA_URL}." >&2
             echo "Start it with: ollama serve" >&2
