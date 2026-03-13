@@ -149,7 +149,7 @@ call_api() {
         echo "  [debug] $(echo "$hash" | cut -c1-7): $api_text"
     fi
 
-    local msg
+    local msg=""
     # if model returned JSON, extract the message field
     if echo "$api_text" | grep -q '^\s*[\[{]'; then
         msg=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]' | jq -r '.[0].message // empty' 2>/dev/null) || true
