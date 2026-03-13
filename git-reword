@@ -126,7 +126,16 @@ call_api() {
     fi
 
     local msg
-    msg=$(echo "$api_text" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -1)
+    # if model returned JSON, extract the message field
+    if echo "$api_text" | grep -q '^\s*[\[{]'; then
+        msg=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]' | jq -r '.[0].message // empty' 2>/dev/null) || true
+    fi
+    # fall back to first non-empty line
+    if [ -z "$msg" ]; then
+        msg=$(echo "$api_text" | tr -d '\r' | grep -v '^[[:space:]]*$' | head -1)
+    fi
+    # strip backticks, surrounding quotes, and leading/trailing whitespace
+    msg=$(echo "$msg" | sed 's/`//g;s/^[[:space:]"'\'']*//;s/[[:space:]"'\'']*$//')
     if [ -z "$msg" ]; then
         msg=$(git log -1 --format="%s" "$hash")
     fi
