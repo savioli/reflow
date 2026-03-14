@@ -43,6 +43,7 @@ class Config:
     verbosity: int = 0
     verify: bool = False
     use_claude: bool = False
+    claude_model: str = "claude-haiku-4-5-20251001"
     use_ollama: bool = False
     ollama_model: str = "llama3.2"
     ollama_url: str = "http://localhost:11434"
@@ -77,6 +78,7 @@ class CLIParser:
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5)")
         parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
         parser.add_argument("--claude", action="store_true", help="Use Claude (requires ANTHROPIC_API_KEY)")
+        parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
         parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires OPENAI_API_KEY)")
@@ -105,6 +107,7 @@ class ConfigFactory:
             verbosity=args.verbose,
             verify=args.verify or git_cfg.get("verify", "").lower() == "true",
             use_claude=use_claude,
+            claude_model=args.claude_model or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
             use_ollama=use_ollama,
             ollama_model=args.ollama_model or git_cfg.get("ollamaModel", "llama3.2"),
             ollama_url=git_cfg.get("ollamaUrl", "http://localhost:11434"),
@@ -319,8 +322,6 @@ class OllamaProvider(AIProvider):
 
 
 class ClaudeProvider(AIProvider):
-    _MODEL = "claude-haiku-4-5-20251001"
-
     _GENERATE_SYSTEM = (
         "You are a git commit message generator. "
         "Output only a short imperative commit message (≤5 words) via the tool. "
@@ -332,7 +333,7 @@ class ClaudeProvider(AIProvider):
         "Use the tool to return your answer."
     )
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str):
         if not api_key:
             print("Error: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
             sys.exit(1)
@@ -342,10 +343,11 @@ class ClaudeProvider(AIProvider):
             print("Error: anthropic package is required. Install with: pip install anthropic", file=sys.stderr)
             sys.exit(1)
         self._client = _anthropic.Anthropic(api_key=api_key)
+        self._model = model
 
     def _call(self, prompt: str, schema: dict, tool_name: str, max_tokens: int, system: str) -> dict:
         response = self._client.messages.create(
-            model=self._MODEL,
+            model=self._model,
             max_tokens=max_tokens,
             system=system,
             tools=[{"name": tool_name, "description": tool_name, "input_schema": schema}],
@@ -431,7 +433,7 @@ class ProviderFactory:
             provider.check()
             return provider
         if config.use_claude:
-            return ClaudeProvider(config.anthropic_api_key)
+            return ClaudeProvider(config.anthropic_api_key, config.claude_model)
         print("Error: no provider selected. Use --claude, --openai, or --ollama (or set reword.* git config).", file=sys.stderr)
         sys.exit(1)
 
