@@ -12,10 +12,18 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Install httpx if missing
+install_pkg() {
+    pip3 install --quiet --user "$1" 2>/dev/null || pip3 install --quiet --break-system-packages "$1"
+}
+
+# Install required packages if missing
 if ! python3 -c "import httpx" &> /dev/null; then
     echo "  Installing httpx..."
-    pip3 install --quiet --user httpx 2>/dev/null || pip3 install --quiet --break-system-packages httpx
+    install_pkg httpx
+fi
+if ! python3 -c "import openai" &> /dev/null; then
+    echo "  Installing openai..."
+    install_pkg openai
 fi
 
 # Create ~/bin if it doesn't exist
@@ -49,8 +57,11 @@ echo ""
 echo "Installation complete. Usage:"
 echo "  git reword                  reword all commits interactively"
 echo "  git reword HEAD~5           reword last 5 commits interactively"
-echo "  git reword --auto           auto-generate messages via Claude API"
-echo "  git reword HEAD~5 --auto    auto mode on a range"
+echo "  git reword --auto             auto-generate messages via Claude API"
+echo "  git reword --auto --openai    use OpenAI instead"
+echo "  git reword --auto --ollama    use Ollama instead"
+echo "  git reword HEAD~5 --auto      auto mode on a range"
 echo ""
-echo "For --auto mode, set your API key:"
+echo "API keys (set whichever provider you use):"
 echo "  export ANTHROPIC_API_KEY=sk-ant-..."
+echo "  export OPENAI_API_KEY=sk-..."

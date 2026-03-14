@@ -46,11 +46,15 @@ VERIFY_SCHEMA = {
 class Config:
     since: str = "--root"
     auto: bool = False
-    debug: bool = False
+    verbosity: int = 0
     verify: bool = False
     use_ollama: bool = False
     ollama_model: str = "llama3.2"
     ollama_url: str = "http://localhost:11434"
+    use_openai: bool = False
+    openai_model: str = "gpt-4o-mini"
+    openai_url: Optional[str] = None
+    openai_api_key: str = ""
     max_retries: int = 3
     context_lines: int = 3
     prompt_template: Optional[str] = None
@@ -58,7 +62,7 @@ class Config:
 
 
 class GitConfigLoader:
-    _KEYS = ["ollamaModel", "ollamaUrl", "prompt", "contextLines", "verify", "retries"]
+    _KEYS = ["ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -79,7 +83,9 @@ class CLIParser:
         parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama instead of Claude API")
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
-        parser.add_argument("--debug", action="store_true", help="Print raw AI output")
+        parser.add_argument("--openai", action="store_true", help="Use OpenAI instead of Claude API")
+        parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
+        parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
         parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
         return parser.parse_args(argv)
 
@@ -90,20 +96,29 @@ class ConfigFactory:
 
     def from_args(self, args: argparse.Namespace) -> Config:
         git_cfg = self._loader.load()
-        env_model = os.environ.get("OLLAMA_MODEL", "")
 
-        ollama_model = args.ollama_model or env_model or git_cfg.get("ollamaModel", "llama3.2")
-        use_ollama = args.ollama or bool(env_model) or "ollamaModel" in git_cfg
-        auto = args.auto or use_ollama
+        env_ollama_model = os.environ.get("OLLAMA_MODEL", "")
+        ollama_model = args.ollama_model or env_ollama_model or git_cfg.get("ollamaModel", "llama3.2")
+        use_ollama = args.ollama or bool(env_ollama_model) or "ollamaModel" in git_cfg
+
+        env_openai_model = os.environ.get("OPENAI_MODEL", "")
+        openai_model = args.openai_model or env_openai_model or git_cfg.get("openaiModel", "gpt-4o-mini")
+        use_openai = args.openai or bool(env_openai_model) or "openaiModel" in git_cfg
+
+        auto = args.auto or use_ollama or use_openai
 
         return Config(
             since=args.since or "--root",
             auto=auto,
-            debug=args.debug,
+            verbosity=args.verbose,
             verify=args.verify or git_cfg.get("verify", "").lower() == "true",
             use_ollama=use_ollama,
             ollama_model=ollama_model,
             ollama_url=os.environ.get("OLLAMA_HOST") or git_cfg.get("ollamaUrl", "http://localhost:11434"),
+            use_openai=use_openai,
+            openai_model=openai_model,
+            openai_url=os.environ.get("OPENAI_BASE_URL") or git_cfg.get("openaiUrl") or None,
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
             max_retries=int(git_cfg.get("retries", 3)),
             context_lines=int(git_cfg.get("contextLines", 3)),
             prompt_template=git_cfg.get("prompt"),
@@ -191,24 +206,41 @@ class GitClient:
 
 class PromptBuilder:
     _DEFAULT = (
-        "Write a git commit message for the following diff.\n"
-        "- Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)\n"
-        "- At most 5 words\n"
-        "- Based solely on the lines changed\n"
-        "- Do NOT use variable names, code tokens, or string literals from the diff\n"
-        "- Describe what the change accomplishes\n"
-        "- Reply with ONLY the plain commit message text, no JSON, no formatting\n"
-        "\nDiff:\n{diff}"
+        "Generate a git commit message for the diff below.\n"
+        "\n"
+        "Rules (follow strictly):\n"
+        "1. Start with an imperative verb: Add, Fix, Update, Remove, Refactor, Extract, Move, Rename, etc.\n"
+        "2. Maximum 5 words total\n"
+        "3. Describe the intent or effect, not the mechanism\n"
+        "4. No filenames, variable names, function names, or code tokens\n"
+        "5. No punctuation at the end\n"
+        "\n"
+        "Good examples:\n"
+        "  Add user authentication\n"
+        "  Fix null pointer crash\n"
+        "  Remove deprecated endpoint\n"
+        "  Refactor payment processing\n"
+        "  Update error handling logic\n"
+        "\n"
+        "Diff:\n{diff}"
     )
 
     _VERIFY = (
-        "Given the following diff and proposed commit message, return true if the message "
-        "accurately describes what changed, or false if it is inaccurate, misleading, "
-        "or uses code literals instead of describing intent.\n\n"
+        "Evaluate the proposed commit message against the diff.\n"
+        "Return accurate=true only if ALL of the following hold:\n"
+        "1. The message accurately describes what changed\n"
+        "2. It starts with an imperative verb (Add, Fix, Update, Remove, Refactor, etc.)\n"
+        "3. It is 5 words or fewer\n"
+        "4. It contains no filenames, variable names, function names, or code tokens\n"
+        "Otherwise return accurate=false.\n"
+        "\n"
         "Proposed message: {message}\n\nDiff:\n{diff}"
     )
 
     def build(self, diff: str, template: Optional[str] = None) -> str:
+        if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
+            print("Warning: reword.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+            self._warned_diff = True
         return (template or self._DEFAULT).replace("{diff}", diff)
 
     def build_verify(self, message: str, diff: str) -> str:
@@ -218,6 +250,16 @@ class PromptBuilder:
 # ── AI providers ───────────────────────────────────────────────────────────────
 
 class AIProvider(ABC):
+    @property
+    @abstractmethod
+    def generate_system(self) -> str:
+        """System message used for commit generation."""
+
+    @property
+    @abstractmethod
+    def verify_system(self) -> str:
+        """System message used for verification."""
+
     @abstractmethod
     def generate(self, prompt: str) -> dict:
         """Return structured commit message dict."""
@@ -240,20 +282,42 @@ class OllamaProvider(AIProvider):
             print(f"Error: Ollama is not running at {self._url}.\nStart with: ollama serve", file=sys.stderr)
             sys.exit(1)
 
-    def _chat(self, prompt: str, schema: dict) -> dict:
+    _GENERATE_SYSTEM = (
+        "You are a git commit message generator. "
+        "Output only a short imperative commit message (≤5 words). "
+        "No explanation, no chat, no preamble, no JSON wrapper."
+    )
+    _VERIFY_SYSTEM = (
+        "You are a code reviewer. "
+        "Evaluate whether the proposed commit message accurately describes the diff. "
+        "Output only a JSON object with a boolean field."
+    )
+
+    def _chat(self, prompt: str, schema: dict, system: str) -> dict:
         response = self._client.post(
             f"{self._url}/api/chat",
             json={"model": self._model, "stream": False, "format": schema,
-                  "messages": [{"role": "user", "content": prompt}]},
+                  "messages": [
+                      {"role": "system", "content": system},
+                      {"role": "user", "content": prompt},
+                  ]},
         )
         response.raise_for_status()
         return json.loads(response.json()["message"]["content"])
 
+    @property
+    def generate_system(self) -> str:
+        return self._GENERATE_SYSTEM
+
+    @property
+    def verify_system(self) -> str:
+        return self._VERIFY_SYSTEM
+
     def generate(self, prompt: str) -> dict:
-        return self._chat(prompt, COMMIT_SCHEMA)
+        return self._chat(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
 
     def verify(self, prompt: str) -> dict:
-        return self._chat(prompt, VERIFY_SCHEMA)
+        return self._chat(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
 
 
 class ClaudeProvider(AIProvider):
@@ -269,10 +333,22 @@ class ClaudeProvider(AIProvider):
             timeout=120,
         )
 
-    def _call(self, prompt: str, schema: dict, tool_name: str, max_tokens: int) -> dict:
+    _GENERATE_SYSTEM = (
+        "You are a git commit message generator. "
+        "Output only a short imperative commit message (≤5 words) via the tool. "
+        "No explanation, no chat, no preamble."
+    )
+    _VERIFY_SYSTEM = (
+        "You are a code reviewer. "
+        "Evaluate whether the proposed commit message accurately describes the diff. "
+        "Use the tool to return your answer."
+    )
+
+    def _call(self, prompt: str, schema: dict, tool_name: str, max_tokens: int, system: str) -> dict:
         response = self._client.post(self._URL, json={
             "model": self._MODEL,
             "max_tokens": max_tokens,
+            "system": system,
             "tools": [{"name": tool_name, "description": tool_name, "input_schema": schema}],
             "tool_choice": {"type": "tool", "name": tool_name},
             "messages": [{"role": "user", "content": prompt}],
@@ -280,15 +356,78 @@ class ClaudeProvider(AIProvider):
         response.raise_for_status()
         return response.json()["content"][0]["input"]
 
+    @property
+    def generate_system(self) -> str:
+        return self._GENERATE_SYSTEM
+
+    @property
+    def verify_system(self) -> str:
+        return self._VERIFY_SYSTEM
+
     def generate(self, prompt: str) -> dict:
-        return self._call(prompt, COMMIT_SCHEMA, "commit", max_tokens=64)
+        return self._call(prompt, COMMIT_SCHEMA, "commit", max_tokens=64, system=self._GENERATE_SYSTEM)
 
     def verify(self, prompt: str) -> dict:
-        return self._call(prompt, VERIFY_SCHEMA, "verify", max_tokens=16)
+        return self._call(prompt, VERIFY_SCHEMA, "verify", max_tokens=16, system=self._VERIFY_SYSTEM)
+
+
+class OpenAIProvider(AIProvider):
+    _GENERATE_SYSTEM = (
+        "You are a git commit message generator. "
+        "Output only a short imperative commit message (≤5 words). "
+        "No explanation, no chat, no preamble."
+    )
+    _VERIFY_SYSTEM = (
+        "You are a code reviewer. "
+        "Evaluate whether the proposed commit message accurately describes the diff. "
+        "Return your answer as JSON."
+    )
+
+    def __init__(self, api_key: str, model: str, base_url: Optional[str] = None):
+        if not api_key:
+            print("Error: OPENAI_API_KEY is not set.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            import openai as _openai
+        except ImportError:
+            print("Error: openai package is required. Install with: pip install openai", file=sys.stderr)
+            sys.exit(1)
+        self._client = _openai.OpenAI(api_key=api_key, **({"base_url": base_url} if base_url else {}))
+        self._model = model
+
+    def _call(self, prompt: str, schema: dict, system: str) -> dict:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "response", "strict": True, "schema": schema},
+            },
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return json.loads(response.choices[0].message.content)
+
+    @property
+    def generate_system(self) -> str:
+        return self._GENERATE_SYSTEM
+
+    @property
+    def verify_system(self) -> str:
+        return self._VERIFY_SYSTEM
+
+    def generate(self, prompt: str) -> dict:
+        return self._call(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
+
+    def verify(self, prompt: str) -> dict:
+        return self._call(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
 
 
 class ProviderFactory:
     def create(self, config: Config) -> AIProvider:
+        if config.use_openai:
+            return OpenAIProvider(config.openai_api_key, config.openai_model, config.openai_url)
         if config.use_ollama:
             provider = OllamaProvider(config.ollama_url, config.ollama_model)
             provider.check()
@@ -306,14 +445,19 @@ class MessageGenerator:
 
     def generate(self, commit_hash: str, diff: str) -> Optional[str]:
         prompt = self._prompt_builder.build(diff, self._config.prompt_template)
+        if self._config.verbosity >= 3:
+            print(f"  [prompt:system] {commit_hash[:7]}: {self._provider.generate_system}", file=sys.stderr)
+            print(f"  [prompt:user] {commit_hash[:7]}:\n{prompt}", file=sys.stderr)
         try:
             result = self._provider.generate(prompt)
-            msg = result.get("message", "").strip()
-            if self._config.debug:
+            raw = result.get("message", "").strip()
+            lines = [l.strip() for l in raw.splitlines() if l.strip()]
+            msg = lines[0].strip("`'\"") if lines else ""
+            if self._config.verbosity >= 1:
                 print(f"  [debug] {commit_hash[:7]}: {msg}", file=sys.stderr)
             return msg or None
         except Exception as exc:
-            if self._config.debug:
+            if self._config.verbosity >= 1:
                 print(f"  [debug] {commit_hash[:7]}: error — {exc}", file=sys.stderr)
             return None
 
@@ -326,8 +470,12 @@ class MessageVerifier:
         self._prompt_builder = prompt_builder
         self._config = config
 
-    def verify(self, message: str, diff: str) -> bool:
+    def verify(self, message: str, diff: str, commit_hash: str = "") -> bool:
         prompt = self._prompt_builder.build_verify(message, diff)
+        if self._config.verbosity >= 3:
+            prefix = f" {commit_hash[:7]}" if commit_hash else ""
+            print(f"  [verify-prompt:system]{prefix}: {self._provider.verify_system}", file=sys.stderr)
+            print(f"  [verify-prompt:user]{prefix}:\n{prompt}", file=sys.stderr)
         try:
             result = self._provider.verify(prompt)
             return bool(result.get("accurate", True))
@@ -379,22 +527,22 @@ class Reworder:
             return msg
 
         attempt = 0
-        while not self._verifier.verify(msg, diff):
-            if self._config.debug:
+        while not self._verifier.verify(msg, diff, commit_hash):
+            if self._config.verbosity >= 1:
                 print(f"  [verify] {commit_hash[:7]}: rejected (attempt {attempt + 1}/{self._config.max_retries})", file=sys.stderr)
             if attempt >= self._config.max_retries:
-                if self._config.debug:
+                if self._config.verbosity >= 1:
                     print(f"  [verify] {commit_hash[:7]}: max retries reached → keeping original", file=sys.stderr)
                 return self._git.get_original_message(commit_hash)
             attempt += 1
             ctx = self._config.context_lines * (attempt + 1)
-            if self._config.debug:
+            if self._config.verbosity >= 1:
                 print(f"  [verify] {commit_hash[:7]}: retrying with {ctx} context lines", file=sys.stderr)
             diff = self._git.get_diff(commit_hash, ctx)
             msg = (self._generator.generate(commit_hash, diff)
                    or self._git.get_original_message(commit_hash))
 
-        if self._config.debug:
+        if self._config.verbosity >= 1:
             print(f"  [verify] {commit_hash[:7]}: accurate", file=sys.stderr)
         return msg
 
