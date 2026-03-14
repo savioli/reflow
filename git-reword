@@ -40,6 +40,7 @@ VERIFY_SCHEMA = {
 class Config:
     since: str = "--root"
     auto: bool = False
+    checkpoint: bool = False
     verbosity: int = 0
     verify: bool = False
     use_claude: bool = False
@@ -74,6 +75,13 @@ class GitConfigLoader:
 
 class CLIParser:
     def parse(self, argv: Optional[list[str]] = None) -> argparse.Namespace:
+        if argv is None:
+            argv = sys.argv[1:]
+
+        checkpoint = bool(argv) and argv[0] == "checkpoint"
+        if checkpoint:
+            argv = argv[1:]
+
         parser = argparse.ArgumentParser(prog="git reword", description=__doc__)
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5)")
         parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
@@ -85,7 +93,9 @@ class CLIParser:
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
         parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
-        return parser.parse_args(argv)
+        args = parser.parse_args(argv)
+        args.checkpoint = checkpoint
+        return args
 
 
 class ConfigFactory:
@@ -104,6 +114,7 @@ class ConfigFactory:
         return Config(
             since=args.since or "--root",
             auto=auto,
+            checkpoint=args.checkpoint,
             verbosity=args.verbose,
             verify=args.verify or git_cfg.get("verify", "").lower() == "true",
             use_claude=use_claude,
@@ -486,6 +497,31 @@ class MessageVerifier:
             return True  # fail open
 
 
+# ── Checkpoint generator ───────────────────────────────────────────────────────
+
+class CheckpointGenerator:
+    _PATTERN = re.compile(r"^Checkpoint #(\d+)$", re.IGNORECASE)
+
+    def __init__(self, git: GitClient):
+        self._git = git
+
+    def _max_existing(self) -> int:
+        result = subprocess.run(
+            ["git", "log", "--format=%s"],
+            capture_output=True, text=True, check=True,
+        )
+        max_n = 0
+        for line in result.stdout.splitlines():
+            m = self._PATTERN.match(line.strip())
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+        return max_n
+
+    def generate(self, count: int) -> list[str]:
+        start = self._max_existing() + 1
+        return [f"Checkpoint #{start + i}" for i in range(count)]
+
+
 # ── Reword orchestrator ────────────────────────────────────────────────────────
 
 class Reworder:
@@ -510,7 +546,12 @@ class Reworder:
         count = len(hashes)
         print(f"Rewording {count} commit(s)...")
 
-        messages = self._auto_mode(hashes) if self._config.auto else self._interactive_mode(hashes)
+        if self._config.checkpoint:
+            messages = CheckpointGenerator(self._git).generate(count)
+        elif self._config.auto:
+            messages = self._auto_mode(hashes)
+        else:
+            messages = self._interactive_mode(hashes)
         self._confirm_and_apply(hashes, messages)
 
     def _auto_mode(self, hashes: list[str]) -> list[str]:
@@ -594,7 +635,7 @@ def main() -> None:
     generator: Optional[MessageGenerator] = None
     verifier: Optional[MessageVerifier] = None
 
-    if config.auto:
+    if config.auto and not config.checkpoint:
         provider = ProviderFactory().create(config)
         prompt_builder = PromptBuilder()
         generator = MessageGenerator(provider, prompt_builder, config)
