@@ -63,7 +63,7 @@ class Config:
 
 
 class GitConfigLoader:
-    _KEYS = ["claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
+    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -98,10 +98,11 @@ class ConfigFactory:
 
     def from_args(self, args: argparse.Namespace) -> Config:
         git_cfg = self._loader.load()
+        default_provider = git_cfg.get("provider", "")
 
-        use_ollama = args.ollama or "ollamaModel" in git_cfg
-        use_openai = args.openai or "openaiModel" in git_cfg
-        use_claude = args.claude or "claudeModel" in git_cfg
+        use_ollama = args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
+        use_openai = args.openai or "openaiModel" in git_cfg or default_provider == "openai"
+        use_claude = args.claude or "claudeModel" in git_cfg or default_provider == "claude"
         auto = args.auto or use_ollama or use_openai or use_claude
 
         return Config(
