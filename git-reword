@@ -173,7 +173,7 @@ generate_message() {
             -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" --argjson schema "$schema" \
                 '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
             )")
-        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')"
+        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')" >&2
         msg=$(echo "$response" | jq -r '.message.content | fromjson | .message // empty' 2>/dev/null) || true
     else
         local response
@@ -187,7 +187,7 @@ generate_message() {
                   tool_choice: {type: "tool", name: "commit"},
                   messages: [{role: "user", content: $prompt}]}'
             )")
-        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')"
+        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')" >&2
         msg=$(echo "$response" | jq -r '.content[0].input.message // empty' 2>/dev/null) || true
     fi
 
