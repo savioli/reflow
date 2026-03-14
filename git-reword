@@ -48,6 +48,7 @@ class Config:
     auto: bool = False
     verbosity: int = 0
     verify: bool = False
+    use_claude: bool = False
     use_ollama: bool = False
     ollama_model: str = "llama3.2"
     ollama_url: str = "http://localhost:11434"
@@ -62,7 +63,7 @@ class Config:
 
 
 class GitConfigLoader:
-    _KEYS = ["ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
+    _KEYS = ["claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -81,9 +82,10 @@ class CLIParser:
         parser = argparse.ArgumentParser(prog="git reword", description=__doc__)
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5)")
         parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
-        parser.add_argument("--ollama", action="store_true", help="Use Ollama instead of Claude API")
+        parser.add_argument("--claude", action="store_true", help="Use Claude (requires ANTHROPIC_API_KEY)")
+        parser.add_argument("--ollama", action="store_true", help="Use Ollama")
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
-        parser.add_argument("--openai", action="store_true", help="Use OpenAI instead of Claude API")
+        parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires OPENAI_API_KEY)")
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
         parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
@@ -99,13 +101,15 @@ class ConfigFactory:
 
         use_ollama = args.ollama or "ollamaModel" in git_cfg
         use_openai = args.openai or "openaiModel" in git_cfg
-        auto = args.auto or use_ollama or use_openai
+        use_claude = args.claude or "claudeModel" in git_cfg
+        auto = args.auto or use_ollama or use_openai or use_claude
 
         return Config(
             since=args.since or "--root",
             auto=auto,
             verbosity=args.verbose,
             verify=args.verify or git_cfg.get("verify", "").lower() == "true",
+            use_claude=use_claude,
             use_ollama=use_ollama,
             ollama_model=args.ollama_model or git_cfg.get("ollamaModel", "llama3.2"),
             ollama_url=git_cfg.get("ollamaUrl", "http://localhost:11434"),
@@ -427,7 +431,10 @@ class ProviderFactory:
             provider = OllamaProvider(config.ollama_url, config.ollama_model)
             provider.check()
             return provider
-        return ClaudeProvider(config.anthropic_api_key)
+        if config.use_claude:
+            return ClaudeProvider(config.anthropic_api_key)
+        print("Error: no provider selected. Use --claude, --openai, or --ollama (or set reword.* git config).", file=sys.stderr)
+        sys.exit(1)
 
 
 # ── Message generator ──────────────────────────────────────────────────────────
