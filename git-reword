@@ -121,54 +121,40 @@ call_api() {
     prompt=$(build_prompt "$diff")
     local api_text=""
 
+    local schema
+    schema=$(jq -n '{type:"object",properties:{hash:{type:"string"},message:{type:"string"}},required:["hash","message"]}')
+
+    local msg=""
+
     if [ "$USE_OLLAMA" = true ]; then
         local response
         response=$(curl -s "${OLLAMA_URL}/api/chat" \
             -H "content-type: application/json" \
-            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" \
-                '{model: $model, stream: false, messages: [{role: "user", content: $prompt}]}'
+            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" --argjson schema "$schema" \
+                '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
             )")
-        if echo "$response" | jq -e '.message.content' > /dev/null 2>&1; then
-            api_text=$(echo "$response" | jq -r '.message.content')
+        if [ "$DEBUG" = true ]; then
+            echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')"
         fi
+        msg=$(echo "$response" | jq -r '.message.content | fromjson | .message // empty' 2>/dev/null) || true
     else
         local response
         response=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: ${ANTHROPIC_API_KEY}" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$prompt" \
-                '{model: $model, max_tokens: 64, messages: [{role: "user", content: $prompt}]}'
+            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$prompt" --argjson schema "$schema" \
+                '{model: $model, max_tokens: 64,
+                  tools: [{name: "commit", description: "Return commit message", input_schema: $schema}],
+                  tool_choice: {type: "tool", name: "commit"},
+                  messages: [{role: "user", content: $prompt}]}'
             )")
-        if echo "$response" | jq -e '.content[0].text' > /dev/null 2>&1; then
-            api_text=$(echo "$response" | jq -r '.content[0].text')
+        if [ "$DEBUG" = true ]; then
+            echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')"
         fi
+        msg=$(echo "$response" | jq -r '.content[0].input.message // empty' 2>/dev/null) || true
     fi
 
-    if [ "$DEBUG" = true ]; then
-        echo "  [debug] $(echo "$hash" | cut -c1-7): $api_text"
-    fi
-
-    local msg=""
-    # if model returned JSON, extract the message field
-    if echo "$api_text" | grep -q '^\s*[\[{]'; then
-        local json_block
-        json_block=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]') || true
-        if [ -n "$json_block" ]; then
-            # try object array: [{"hash":"...","message":"..."}]
-            msg=$(echo "$json_block" | jq -r '.[0].message // empty' 2>/dev/null) || true
-            # try string array: ["hash","message"] — take the non-hash element
-            if [ -z "$msg" ]; then
-                msg=$(echo "$json_block" | jq -r '.[] | select(test("^[0-9a-f]{4,40}$") | not)' 2>/dev/null | head -1) || true
-            fi
-        fi
-    fi
-    # fall back to first non-empty line
-    if [ -z "$msg" ]; then
-        msg=$(echo "$api_text" | tr -d '\r' | grep -v '^[[:space:]]*$' | head -1)
-    fi
-    # strip backticks, surrounding quotes, and leading/trailing whitespace
-    msg=$(echo "$msg" | sed 's/`//g;s/^[[:space:]"'\'']*//;s/[[:space:]"'\'']*$//')
     if [ -z "$msg" ]; then
         msg=$(git log -1 --format="%s" "$hash")
     fi
