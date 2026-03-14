@@ -54,6 +54,8 @@ fi
 GIT_CFG_OLLAMA_MODEL=$(git config --get reword.ollamaModel 2>/dev/null) || true
 GIT_CFG_OLLAMA_URL=$(git config --get reword.ollamaUrl 2>/dev/null) || true
 GIT_CFG_PROMPT=$(git config --get reword.prompt 2>/dev/null) || true
+GIT_CFG_CONTEXT_LINES=$(git config --get reword.contextLines 2>/dev/null) || true
+CONTEXT_LINES="${GIT_CFG_CONTEXT_LINES:-3}"
 
 # Apply git config for model (env var > git config > default)
 if [ -z "$OLLAMA_MODEL" ] && [ -n "$GIT_CFG_OLLAMA_MODEL" ]; then
@@ -116,7 +118,7 @@ EOF
 call_api() {
     local hash="$1"
     local diff
-    diff=$(git diff-tree --no-commit-id -p "$hash")
+    diff=$(git diff-tree --no-commit-id -p -U"$CONTEXT_LINES" "$hash")
     local prompt
     prompt=$(build_prompt "$diff")
     local api_text=""
