@@ -197,21 +197,18 @@ generate_message() {
 # ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
 call_api() {
     local hash="$1"
-    local diff
-    diff=$(git diff-tree --no-commit-id -p -U"$CONTEXT_LINES" "$hash")
-    local prompt
-    prompt=$(build_prompt "$diff")
     local schema
     schema=$(jq -n '{type:"object",additionalProperties:false,properties:{hash:{type:"string",minLength:1},message:{type:"string",minLength:1}},required:["hash","message"]}')
 
-    local msg
+    local attempt=0
+    local ctx diff prompt msg
+    ctx=$CONTEXT_LINES
+    diff=$(git diff-tree --no-commit-id -p -U"$ctx" "$hash")
+    prompt=$(build_prompt "$diff")
     msg=$(generate_message "$hash" "$prompt" "$schema")
-    if [ -z "$msg" ]; then
-        msg=$(git log -1 --format="%s" "$hash")
-    fi
+    if [ -z "$msg" ]; then msg=$(git log -1 --format="%s" "$hash"); fi
 
     if [ "$VERIFY" = true ]; then
-        local attempt=0
         while ! verify_message "$msg" "$diff"; do
             [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): rejected (attempt $((attempt + 1))/${MAX_RETRIES})"
             if [ "$attempt" -ge "$MAX_RETRIES" ]; then
@@ -220,6 +217,10 @@ call_api() {
                 break
             fi
             attempt=$((attempt + 1))
+            ctx=$((CONTEXT_LINES * (attempt + 1)))
+            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): retrying with ${ctx} context lines"
+            diff=$(git diff-tree --no-commit-id -p -U"$ctx" "$hash")
+            prompt=$(build_prompt "$diff")
             msg=$(generate_message "$hash" "$prompt" "$schema")
             if [ -z "$msg" ]; then msg=$(git log -1 --format="%s" "$hash"); fi
         done
