@@ -104,8 +104,10 @@ Write a git commit message for the following diff.
 - Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
 - At most 5 words
 - Based solely on the lines changed
+- Do NOT return JSON, markdown, backticks, quotes, or any formatting
+- Reply with ONLY the plain commit message text, nothing else
 
-Reply with ONLY the commit message, nothing else.
+Example output: Add user authentication endpoint
 
 Diff:
 ${diff}
