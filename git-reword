@@ -9,6 +9,7 @@
 #   git reword --auto --ollama         auto-generate via Ollama, default model
 #   git reword --auto --ollama=llama3.2  auto-generate via Ollama, specific model
 #   git reword --auto --debug            print raw AI output before parsing
+#   git reword --auto --verify           verify each message with a second API call
 #
 # Git config (git config reword.<key> <value>):
 #   reword.ollamaModel   Ollama model name (overridden by OLLAMA_MODEL or --ollama=)
@@ -28,12 +29,14 @@ OLLAMA_MODEL="${OLLAMA_MODEL:-}"
 USE_OLLAMA=false
 AUTO=false
 DEBUG=false
+VERIFY=false
 if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; AUTO=true; fi
 
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO=true ;;
         --debug) DEBUG=true ;;
+        --verify) VERIFY=true ;;
         --ollama) USE_OLLAMA=true ;;
         --ollama=*) USE_OLLAMA=true; OLLAMA_MODEL="${arg#--ollama=}" ;;
         --help|-h)
@@ -114,6 +117,41 @@ ${diff}
 EOF
 }
 
+# ── Verify a generated message against the diff ───────────────────────────────
+verify_message() {
+    local msg="$1"
+    local diff="$2"
+    local verify_schema
+    verify_schema=$(jq -n '{type:"object",additionalProperties:false,properties:{accurate:{type:"boolean"}},required:["accurate"]}')
+    local verify_prompt="Given the following diff and proposed commit message, return true if the message accurately describes what changed, or false if it is inaccurate, misleading, or uses code literals instead of describing intent.\n\nProposed message: ${msg}\n\nDiff:\n${diff}"
+    local accurate="true"
+
+    if [ "$USE_OLLAMA" = true ]; then
+        local response
+        response=$(curl -s "${OLLAMA_URL}/api/chat" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$verify_prompt" --argjson schema "$verify_schema" \
+                '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
+            )")
+        accurate=$(echo "$response" | jq -r '.message.content | fromjson | .accurate' 2>/dev/null) || accurate="true"
+    else
+        local response
+        response=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$verify_prompt" --argjson schema "$verify_schema" \
+                '{model: $model, max_tokens: 16,
+                  tools: [{name: "verify", description: "Verify the commit message accuracy", input_schema: $schema}],
+                  tool_choice: {type: "tool", name: "verify"},
+                  messages: [{role: "user", content: $prompt}]}'
+            )")
+        accurate=$(echo "$response" | jq -r '.content[0].input.accurate' 2>/dev/null) || accurate="true"
+    fi
+
+    [ "$accurate" = "true" ]
+}
+
 # ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
 call_api() {
     local hash="$1"
@@ -160,6 +198,16 @@ call_api() {
     if [ -z "$msg" ]; then
         msg=$(git log -1 --format="%s" "$hash")
     fi
+
+    if [ "$VERIFY" = true ]; then
+        if ! verify_message "$msg" "$diff"; then
+            if [ "$DEBUG" = true ]; then
+                echo "  [verify] $(echo "$hash" | cut -c1-7): rejected → keeping original"
+            fi
+            msg=$(git log -1 --format="%s" "$hash")
+        fi
+    fi
+
     echo "$msg" >> "$MESSAGES_FILE"
 }
 
