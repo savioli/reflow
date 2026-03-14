@@ -270,18 +270,6 @@ class AIProvider(ABC):
 
 
 class OllamaProvider(AIProvider):
-    def __init__(self, url: str, model: str):
-        self._url = url.rstrip("/")
-        self._model = model
-        self._client = httpx.Client(timeout=120)
-
-    def check(self) -> None:
-        try:
-            self._client.get(f"{self._url}/api/tags")
-        except httpx.RequestError:
-            print(f"Error: Ollama is not running at {self._url}.\nStart with: ollama serve", file=sys.stderr)
-            sys.exit(1)
-
     _GENERATE_SYSTEM = (
         "You are a git commit message generator. "
         "Output only a short imperative commit message (≤5 words). "
@@ -293,17 +281,33 @@ class OllamaProvider(AIProvider):
         "Output only a JSON object with a boolean field."
     )
 
+    def __init__(self, url: str, model: str):
+        try:
+            import ollama as _ollama
+        except ImportError:
+            print("Error: ollama package is required. Install with: pip install ollama", file=sys.stderr)
+            sys.exit(1)
+        self._ollama = _ollama
+        self._model = model
+        self._client = _ollama.Client(host=url, timeout=120)
+
+    def check(self) -> None:
+        try:
+            self._client.list()
+        except Exception:
+            print(f"Error: Ollama is not running.\nStart with: ollama serve", file=sys.stderr)
+            sys.exit(1)
+
     def _chat(self, prompt: str, schema: dict, system: str) -> dict:
-        response = self._client.post(
-            f"{self._url}/api/chat",
-            json={"model": self._model, "stream": False, "format": schema,
-                  "messages": [
-                      {"role": "system", "content": system},
-                      {"role": "user", "content": prompt},
-                  ]},
+        response = self._client.chat(
+            model=self._model,
+            format=schema,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
         )
-        response.raise_for_status()
-        return json.loads(response.json()["message"]["content"])
+        return json.loads(response.message.content)
 
     @property
     def generate_system(self) -> str:

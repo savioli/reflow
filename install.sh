@@ -25,6 +25,10 @@ if ! python3 -c "import openai" &> /dev/null; then
     echo "  Installing openai..."
     install_pkg openai
 fi
+if ! python3 -c "import ollama" &> /dev/null; then
+    echo "  Installing ollama..."
+    install_pkg ollama
+fi
 
 # Create ~/bin if it doesn't exist
 mkdir -p "$BIN_DIR"
