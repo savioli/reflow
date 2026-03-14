@@ -17,6 +17,10 @@ install_pkg() {
 }
 
 # Install required packages if missing
+if ! python3 -c "import anthropic" &> /dev/null; then
+    echo "  Installing anthropic..."
+    install_pkg anthropic
+fi
 if ! python3 -c "import openai" &> /dev/null; then
     echo "  Installing openai..."
     install_pkg openai
