@@ -122,7 +122,7 @@ call_api() {
     local api_text=""
 
     local schema
-    schema=$(jq -n '{type:"object",properties:{hash:{type:"string"},message:{type:"string"}},required:["hash","message"]}')
+    schema=$(jq -n '{type:"object",additionalProperties:false,properties:{hash:{type:"string",minLength:1},message:{type:"string",minLength:1}},required:["hash","message"]}')
 
     local msg=""
 
