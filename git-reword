@@ -15,6 +15,8 @@
 #   reword.ollamaModel   Ollama model name (overridden by OLLAMA_MODEL or --ollama=)
 #   reword.ollamaUrl     Ollama base URL (overridden by OLLAMA_HOST)
 #   reword.prompt        Custom prompt template; use {diff} as placeholder for the diff
+#   reword.contextLines  Surrounding diff context lines sent to the model (default: 3)
+#   reword.verify        Run a second API call to verify each message (true/false)
 #
 # Requirements:
 #   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
@@ -59,6 +61,8 @@ GIT_CFG_OLLAMA_URL=$(git config --get reword.ollamaUrl 2>/dev/null) || true
 GIT_CFG_PROMPT=$(git config --get reword.prompt 2>/dev/null) || true
 GIT_CFG_CONTEXT_LINES=$(git config --get reword.contextLines 2>/dev/null) || true
 CONTEXT_LINES="${GIT_CFG_CONTEXT_LINES:-3}"
+GIT_CFG_VERIFY=$(git config --get --type bool reword.verify 2>/dev/null) || true
+if [ "$GIT_CFG_VERIFY" = "true" ]; then VERIFY=true; fi
 
 # Apply git config for model (env var > git config > default)
 if [ -z "$OLLAMA_MODEL" ] && [ -n "$GIT_CFG_OLLAMA_MODEL" ]; then
