@@ -27,10 +27,9 @@ COMMIT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "hash": {"type": "string", "minLength": 1},
         "message": {"type": "string", "minLength": 1},
     },
-    "required": ["hash", "message"],
+    "required": ["message"],
 }
 
 VERIFY_SCHEMA = {
