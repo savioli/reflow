@@ -17,6 +17,7 @@
 #   reword.prompt        Custom prompt template; use {diff} as placeholder for the diff
 #   reword.contextLines  Surrounding diff context lines sent to the model (default: 3)
 #   reword.verify        Run a second API call to verify each message (true/false)
+#   reword.retries       Max retries when verification fails (default: 3)
 #
 # Requirements:
 #   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
@@ -63,6 +64,8 @@ GIT_CFG_CONTEXT_LINES=$(git config --get reword.contextLines 2>/dev/null) || tru
 CONTEXT_LINES="${GIT_CFG_CONTEXT_LINES:-3}"
 GIT_CFG_VERIFY=$(git config --get --type bool reword.verify 2>/dev/null) || true
 if [ "$GIT_CFG_VERIFY" = "true" ]; then VERIFY=true; fi
+GIT_CFG_RETRIES=$(git config --get --type int reword.retries 2>/dev/null) || true
+MAX_RETRIES="${GIT_CFG_RETRIES:-3}"
 
 # Apply git config for model (env var > git config > default)
 if [ -z "$OLLAMA_MODEL" ] && [ -n "$GIT_CFG_OLLAMA_MODEL" ]; then
@@ -156,18 +159,11 @@ verify_message() {
     [ "$accurate" = "true" ]
 }
 
-# ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
-call_api() {
+# ── Generate a single message for a commit diff ───────────────────────────────
+generate_message() {
     local hash="$1"
-    local diff
-    diff=$(git diff-tree --no-commit-id -p -U"$CONTEXT_LINES" "$hash")
-    local prompt
-    prompt=$(build_prompt "$diff")
-    local api_text=""
-
-    local schema
-    schema=$(jq -n '{type:"object",additionalProperties:false,properties:{hash:{type:"string",minLength:1},message:{type:"string",minLength:1}},required:["hash","message"]}')
-
+    local prompt="$2"
+    local schema="$3"
     local msg=""
 
     if [ "$USE_OLLAMA" = true ]; then
@@ -177,9 +173,7 @@ call_api() {
             -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" --argjson schema "$schema" \
                 '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
             )")
-        if [ "$DEBUG" = true ]; then
-            echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')"
-        fi
+        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')"
         msg=$(echo "$response" | jq -r '.message.content | fromjson | .message // empty' 2>/dev/null) || true
     else
         local response
@@ -193,22 +187,44 @@ call_api() {
                   tool_choice: {type: "tool", name: "commit"},
                   messages: [{role: "user", content: $prompt}]}'
             )")
-        if [ "$DEBUG" = true ]; then
-            echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')"
-        fi
+        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')"
         msg=$(echo "$response" | jq -r '.content[0].input.message // empty' 2>/dev/null) || true
     fi
 
+    echo "$msg"
+}
+
+# ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
+call_api() {
+    local hash="$1"
+    local diff
+    diff=$(git diff-tree --no-commit-id -p -U"$CONTEXT_LINES" "$hash")
+    local prompt
+    prompt=$(build_prompt "$diff")
+    local schema
+    schema=$(jq -n '{type:"object",additionalProperties:false,properties:{hash:{type:"string",minLength:1},message:{type:"string",minLength:1}},required:["hash","message"]}')
+
+    local msg
+    msg=$(generate_message "$hash" "$prompt" "$schema")
     if [ -z "$msg" ]; then
         msg=$(git log -1 --format="%s" "$hash")
     fi
 
     if [ "$VERIFY" = true ]; then
-        if verify_message "$msg" "$diff"; then
+        local attempt=0
+        while ! verify_message "$msg" "$diff"; do
+            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): rejected (attempt $((attempt + 1))/${MAX_RETRIES})"
+            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
+                [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): max retries reached → keeping original"
+                msg=$(git log -1 --format="%s" "$hash")
+                break
+            fi
+            attempt=$((attempt + 1))
+            msg=$(generate_message "$hash" "$prompt" "$schema")
+            if [ -z "$msg" ]; then msg=$(git log -1 --format="%s" "$hash"); fi
+        done
+        if verify_message "$msg" "$diff" 2>/dev/null; then
             [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): accurate"
-        else
-            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): rejected → keeping original"
-            msg=$(git log -1 --format="%s" "$hash")
         fi
     fi
 
