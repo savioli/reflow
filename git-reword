@@ -107,8 +107,6 @@ Write a git commit message for the following diff.
 - Do NOT return JSON, markdown, backticks, quotes, or any formatting
 - Reply with ONLY the plain commit message text, nothing else
 
-Example output: Add user authentication endpoint
-
 Diff:
 ${diff}
 EOF
@@ -154,7 +152,16 @@ call_api() {
     local msg=""
     # if model returned JSON, extract the message field
     if echo "$api_text" | grep -q '^\s*[\[{]'; then
-        msg=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]' | jq -r '.[0].message // empty' 2>/dev/null) || true
+        local json_block
+        json_block=$(echo "$api_text" | tr -d '\r\n' | grep -o '\[.*\]') || true
+        if [ -n "$json_block" ]; then
+            # try object array: [{"hash":"...","message":"..."}]
+            msg=$(echo "$json_block" | jq -r '.[0].message // empty' 2>/dev/null) || true
+            # try string array: ["hash","message"] — take the non-hash element
+            if [ -z "$msg" ]; then
+                msg=$(echo "$json_block" | jq -r '.[] | select(test("^[0-9a-f]{4,40}$") | not)' 2>/dev/null | head -1) || true
+            fi
+        fi
     fi
     # fall back to first non-empty line
     if [ -z "$msg" ]; then
