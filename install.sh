@@ -15,7 +15,7 @@ fi
 # Install httpx if missing
 if ! python3 -c "import httpx" &> /dev/null; then
     echo "  Installing httpx..."
-    pip3 install --quiet httpx
+    pip3 install --quiet --user httpx 2>/dev/null || pip3 install --quiet --break-system-packages httpx
 fi
 
 # Create ~/bin if it doesn't exist
