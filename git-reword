@@ -200,10 +200,10 @@ call_api() {
     fi
 
     if [ "$VERIFY" = true ]; then
-        if ! verify_message "$msg" "$diff"; then
-            if [ "$DEBUG" = true ]; then
-                echo "  [verify] $(echo "$hash" | cut -c1-7): rejected → keeping original"
-            fi
+        if verify_message "$msg" "$diff"; then
+            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): accurate"
+        else
+            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): rejected → keeping original"
             msg=$(git log -1 --format="%s" "$hash")
         fi
     fi
