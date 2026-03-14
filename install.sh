@@ -17,10 +17,6 @@ install_pkg() {
 }
 
 # Install required packages if missing
-if ! python3 -c "import httpx" &> /dev/null; then
-    echo "  Installing httpx..."
-    install_pkg httpx
-fi
 if ! python3 -c "import openai" &> /dev/null; then
     echo "  Installing openai..."
     install_pkg openai

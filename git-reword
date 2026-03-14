@@ -14,12 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-try:
-    import httpx
-except ImportError:
-    print("Error: httpx is required. Install with: pip install httpx", file=sys.stderr)
-    sys.exit(1)
-
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -325,17 +319,7 @@ class OllamaProvider(AIProvider):
 
 
 class ClaudeProvider(AIProvider):
-    _URL = "https://api.anthropic.com/v1/messages"
     _MODEL = "claude-haiku-4-5-20251001"
-
-    def __init__(self, api_key: str):
-        if not api_key:
-            print("Error: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
-            sys.exit(1)
-        self._client = httpx.Client(
-            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-            timeout=120,
-        )
 
     _GENERATE_SYSTEM = (
         "You are a git commit message generator. "
@@ -348,17 +332,27 @@ class ClaudeProvider(AIProvider):
         "Use the tool to return your answer."
     )
 
+    def __init__(self, api_key: str):
+        if not api_key:
+            print("Error: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            import anthropic as _anthropic
+        except ImportError:
+            print("Error: anthropic package is required. Install with: pip install anthropic", file=sys.stderr)
+            sys.exit(1)
+        self._client = _anthropic.Anthropic(api_key=api_key)
+
     def _call(self, prompt: str, schema: dict, tool_name: str, max_tokens: int, system: str) -> dict:
-        response = self._client.post(self._URL, json={
-            "model": self._MODEL,
-            "max_tokens": max_tokens,
-            "system": system,
-            "tools": [{"name": tool_name, "description": tool_name, "input_schema": schema}],
-            "tool_choice": {"type": "tool", "name": tool_name},
-            "messages": [{"role": "user", "content": prompt}],
-        })
-        response.raise_for_status()
-        return response.json()["content"][0]["input"]
+        response = self._client.messages.create(
+            model=self._MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            tools=[{"name": tool_name, "description": tool_name, "input_schema": schema}],
+            tool_choice={"type": "tool", "name": tool_name},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].input
 
     @property
     def generate_system(self) -> str:
