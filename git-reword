@@ -363,10 +363,12 @@ class Reworder:
         self._confirm_and_apply(hashes, messages)
 
     def _auto_mode(self, hashes: list[str]) -> list[str]:
+        messages = []
         count = len(hashes)
         for i, commit_hash in enumerate(hashes, 1):
             print(f"  [{i}/{count}] {commit_hash[:7]}")
-        return [self._generate_with_retry(h) for h in hashes]
+            messages.append(self._generate_with_retry(commit_hash))
+        return messages
 
     def _generate_with_retry(self, commit_hash: str) -> str:
         diff = self._git.get_diff(commit_hash, self._config.context_lines)
