@@ -6,6 +6,18 @@ BIN_DIR="$HOME/bin"
 
 echo "Installing git-reword..."
 
+# Check Python 3
+if ! command -v python3 &> /dev/null; then
+    echo "Error: python3 is required." >&2
+    exit 1
+fi
+
+# Install httpx if missing
+if ! python3 -c "import httpx" &> /dev/null; then
+    echo "  Installing httpx..."
+    pip3 install --quiet httpx
+fi
+
 # Create ~/bin if it doesn't exist
 mkdir -p "$BIN_DIR"
 

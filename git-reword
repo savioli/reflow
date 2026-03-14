@@ -1,327 +1,456 @@
-#!/usr/bin/env bash
-# git-reword — reword commit messages interactively or via AI
-#
-# Usage:
-#   git reword                         reword all commits from root
-#   git reword HEAD~5                  reword last 5 commits
-#   git reword --auto                  auto-generate via Claude API (all commits)
-#   git reword HEAD~5 --auto           auto-generate via Claude API (range)
-#   git reword --auto --ollama         auto-generate via Ollama, default model
-#   git reword --auto --ollama=llama3.2  auto-generate via Ollama, specific model
-#   git reword --auto --debug            print raw AI output before parsing
-#   git reword --auto --verify           verify each message with a second API call
-#
-# Git config (git config reword.<key> <value>):
-#   reword.ollamaModel   Ollama model name (overridden by OLLAMA_MODEL or --ollama=)
-#   reword.ollamaUrl     Ollama base URL (overridden by OLLAMA_HOST)
-#   reword.prompt        Custom prompt template; use {diff} as placeholder for the diff
-#   reword.contextLines  Surrounding diff context lines sent to the model (default: 3)
-#   reword.verify        Run a second API call to verify each message (true/false)
-#   reword.retries       Max retries when verification fails (default: 3)
-#
-# Requirements:
-#   --auto (Claude):  ANTHROPIC_API_KEY env var, curl, jq
-#   --auto --ollama:  Ollama running at localhost:11434, curl, jq
-#                     OLLAMA_MODEL env var sets model and implies --ollama (fallback: llama3.2)
+#!/usr/bin/env python3
+"""git-reword — reword commit messages interactively or via AI."""
 
-set -euo pipefail
+import argparse
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
-# ── Parse arguments ───────────────────────────────────────────────────────────
-SINCE="--root"
-OLLAMA_MODEL="${OLLAMA_MODEL:-}"
-USE_OLLAMA=false
-AUTO=false
-DEBUG=false
-VERIFY=false
-if [ -n "$OLLAMA_MODEL" ]; then USE_OLLAMA=true; AUTO=true; fi
+try:
+    import httpx
+except ImportError:
+    print("Error: httpx is required. Install with: pip install httpx", file=sys.stderr)
+    sys.exit(1)
 
-for arg in "$@"; do
-    case "$arg" in
-        --auto) AUTO=true ;;
-        --debug) DEBUG=true ;;
-        --verify) VERIFY=true ;;
-        --ollama) USE_OLLAMA=true ;;
-        --ollama=*) USE_OLLAMA=true; OLLAMA_MODEL="${arg#--ollama=}" ;;
-        --help|-h)
-            sed -n '2,12p' "$0" | sed 's/^# //'
-            exit 0
-            ;;
-        *) SINCE="$arg" ;;
-    esac
-done
 
-# ── Validate we're inside a git repo ─────────────────────────────────────────
-if ! git rev-parse --git-dir > /dev/null 2>&1; then
-    echo "Error: not inside a git repository." >&2
-    exit 1
-fi
+# ── Schemas ────────────────────────────────────────────────────────────────────
 
-# ── Load git config (lowest priority — CLI flags and env vars override) ───────
-GIT_CFG_OLLAMA_MODEL=$(git config --get reword.ollamaModel 2>/dev/null) || true
-GIT_CFG_OLLAMA_URL=$(git config --get reword.ollamaUrl 2>/dev/null) || true
-GIT_CFG_PROMPT=$(git config --get reword.prompt 2>/dev/null) || true
-GIT_CFG_CONTEXT_LINES=$(git config --get reword.contextLines 2>/dev/null) || true
-CONTEXT_LINES="${GIT_CFG_CONTEXT_LINES:-3}"
-GIT_CFG_VERIFY=$(git config --get --type bool reword.verify 2>/dev/null) || true
-if [ "$GIT_CFG_VERIFY" = "true" ]; then VERIFY=true; fi
-GIT_CFG_RETRIES=$(git config --get --type int reword.retries 2>/dev/null) || true
-MAX_RETRIES="${GIT_CFG_RETRIES:-3}"
-
-# Apply git config for model (env var > git config > default)
-if [ -z "$OLLAMA_MODEL" ] && [ -n "$GIT_CFG_OLLAMA_MODEL" ]; then
-    OLLAMA_MODEL="$GIT_CFG_OLLAMA_MODEL"
-    USE_OLLAMA=true
-    AUTO=true
-fi
-OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
-
-# Apply git config for URL (env var > git config > default)
-OLLAMA_URL="${OLLAMA_HOST:-${GIT_CFG_OLLAMA_URL:-http://localhost:11434}}"
-
-# ── Collect commits oldest → newest ──────────────────────────────────────────
-HASHES=()
-if [ "$SINCE" = "--root" ]; then
-    while IFS= read -r line; do HASHES+=("$line"); done < <(git log --reverse --format="%H")
-else
-    while IFS= read -r line; do HASHES+=("$line"); done < <(git log --reverse --format="%H" "${SINCE}..HEAD")
-fi
-
-COUNT=${#HASHES[@]}
-if [ "$COUNT" -eq 0 ]; then
-    echo "No commits to reword."
-    exit 0
-fi
-
-echo "Rewording $COUNT commit(s)..."
-
-# ── Build messages file ───────────────────────────────────────────────────────
-MESSAGES_FILE=$(mktemp)
-COUNTER_FILE=$(mktemp)
-SEQ_EDITOR=$(mktemp)
-MSG_EDITOR=$(mktemp)
-echo 0 > "$COUNTER_FILE"
-
-cleanup() { rm -f "$MESSAGES_FILE" "$COUNTER_FILE" "$SEQ_EDITOR" "$MSG_EDITOR"; }
-trap cleanup EXIT
-
-# ── Shared: build prompt for a single commit diff ────────────────────────────
-build_prompt() {
-    local diff="$1"
-    if [ -n "$GIT_CFG_PROMPT" ]; then
-        echo "${GIT_CFG_PROMPT//\{diff\}/$diff}"
-        return
-    fi
-    cat <<EOF
-Write a git commit message for the following diff.
-- Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)
-- At most 5 words
-- Based solely on the lines changed
-- Do NOT return JSON, markdown, backticks, quotes, or any formatting
-- Reply with ONLY the plain commit message text, nothing else
-
-Diff:
-${diff}
-EOF
+COMMIT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "hash": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+    },
+    "required": ["hash", "message"],
 }
 
-# ── Verify a generated message against the diff ───────────────────────────────
-verify_message() {
-    local msg="$1"
-    local diff="$2"
-    local verify_schema
-    verify_schema=$(jq -n '{type:"object",additionalProperties:false,properties:{accurate:{type:"boolean"}},required:["accurate"]}')
-    local verify_prompt="Given the following diff and proposed commit message, return true if the message accurately describes what changed, or false if it is inaccurate, misleading, or uses code literals instead of describing intent.\n\nProposed message: ${msg}\n\nDiff:\n${diff}"
-    local accurate="true"
-
-    if [ "$USE_OLLAMA" = true ]; then
-        local response
-        response=$(curl -s "${OLLAMA_URL}/api/chat" \
-            -H "content-type: application/json" \
-            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$verify_prompt" --argjson schema "$verify_schema" \
-                '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
-            )")
-        accurate=$(echo "$response" | jq -r '.message.content | fromjson | .accurate' 2>/dev/null) || accurate="true"
-    else
-        local response
-        response=$(curl -s https://api.anthropic.com/v1/messages \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$verify_prompt" --argjson schema "$verify_schema" \
-                '{model: $model, max_tokens: 16,
-                  tools: [{name: "verify", description: "Verify the commit message accuracy", input_schema: $schema}],
-                  tool_choice: {type: "tool", name: "verify"},
-                  messages: [{role: "user", content: $prompt}]}'
-            )")
-        accurate=$(echo "$response" | jq -r '.content[0].input.accurate' 2>/dev/null) || accurate="true"
-    fi
-
-    [ "$accurate" = "true" ]
+VERIFY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"accurate": {"type": "boolean"}},
+    "required": ["accurate"],
 }
 
-# ── Generate a single message for a commit diff ───────────────────────────────
-generate_message() {
-    local hash="$1"
-    local prompt="$2"
-    local schema="$3"
-    local msg=""
 
-    if [ "$USE_OLLAMA" = true ]; then
-        local response
-        response=$(curl -s "${OLLAMA_URL}/api/chat" \
-            -H "content-type: application/json" \
-            -d "$(jq -n --arg model "$OLLAMA_MODEL" --arg prompt "$prompt" --argjson schema "$schema" \
-                '{model: $model, stream: false, format: $schema, messages: [{role: "user", content: $prompt}]}'
-            )")
-        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.message.content // empty')" >&2
-        msg=$(echo "$response" | jq -r '.message.content | fromjson | .message // empty' 2>/dev/null) || true
-    else
-        local response
-        response=$(curl -s https://api.anthropic.com/v1/messages \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d "$(jq -n --arg model "claude-haiku-4-5-20251001" --arg prompt "$prompt" --argjson schema "$schema" \
-                '{model: $model, max_tokens: 64,
-                  tools: [{name: "commit", description: "Return commit message", input_schema: $schema}],
-                  tool_choice: {type: "tool", name: "commit"},
-                  messages: [{role: "user", content: $prompt}]}'
-            )")
-        [ "$DEBUG" = true ] && echo "  [debug] $(echo "$hash" | cut -c1-7): $(echo "$response" | jq -r '.content[0].input // empty')" >&2
-        msg=$(echo "$response" | jq -r '.content[0].input.message // empty' 2>/dev/null) || true
-    fi
+# ── Configuration ──────────────────────────────────────────────────────────────
 
-    echo "$msg"
-}
+@dataclass
+class Config:
+    since: str = "--root"
+    auto: bool = False
+    debug: bool = False
+    verify: bool = False
+    use_ollama: bool = False
+    ollama_model: str = "llama3.2"
+    ollama_url: str = "http://localhost:11434"
+    max_retries: int = 3
+    context_lines: int = 3
+    prompt_template: Optional[str] = None
+    anthropic_api_key: str = ""
 
-# ── Shared: call API for a single commit, append message to MESSAGES_FILE ────
-call_api() {
-    local hash="$1"
-    local schema
-    schema=$(jq -n '{type:"object",additionalProperties:false,properties:{hash:{type:"string",minLength:1},message:{type:"string",minLength:1}},required:["hash","message"]}')
 
-    local attempt=0
-    local ctx diff prompt msg
-    ctx=$CONTEXT_LINES
-    diff=$(git diff-tree --no-commit-id -p -U"$ctx" "$hash")
-    prompt=$(build_prompt "$diff")
-    msg=$(generate_message "$hash" "$prompt" "$schema")
-    if [ -z "$msg" ]; then msg=$(git log -1 --format="%s" "$hash"); fi
+class GitConfigLoader:
+    _KEYS = ["ollamaModel", "ollamaUrl", "prompt", "contextLines", "verify", "retries"]
 
-    if [ "$VERIFY" = true ]; then
-        while ! verify_message "$msg" "$diff"; do
-            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): rejected (attempt $((attempt + 1))/${MAX_RETRIES})"
-            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
-                [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): max retries reached → keeping original"
-                msg=$(git log -1 --format="%s" "$hash")
-                break
-            fi
-            attempt=$((attempt + 1))
-            ctx=$((CONTEXT_LINES * (attempt + 1)))
-            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): retrying with ${ctx} context lines"
-            diff=$(git diff-tree --no-commit-id -p -U"$ctx" "$hash")
-            prompt=$(build_prompt "$diff")
-            msg=$(generate_message "$hash" "$prompt" "$schema")
-            if [ -z "$msg" ]; then msg=$(git log -1 --format="%s" "$hash"); fi
-        done
-        if verify_message "$msg" "$diff" 2>/dev/null; then
-            [ "$DEBUG" = true ] && echo "  [verify] $(echo "$hash" | cut -c1-7): accurate"
-        fi
-    fi
+    def load(self) -> dict[str, str]:
+        cfg = {}
+        for key in self._KEYS:
+            result = subprocess.run(
+                ["git", "config", "--get", f"reword.{key}"],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                cfg[key] = result.stdout.strip()
+        return cfg
 
-    echo "$msg" >> "$MESSAGES_FILE"
-}
 
-# ── Shared: show preview and confirm ─────────────────────────────────────────
-confirm_messages() {
-    echo ""
-    echo "Generated messages:"
-    echo "───────────────────"
-    local i=0
-    for hash in "${HASHES[@]}"; do
-        i=$((i + 1))
-        msg=$(sed -n "${i}p" "$MESSAGES_FILE")
-        printf "  %s  %s\n" "$(echo "$hash" | cut -c1-7)" "$msg"
-    done
-    echo ""
-    read -rp "Apply these messages? [Y/n] " confirm
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
-        echo "Aborted."
-        exit 0
-    fi
-}
+class CLIParser:
+    def parse(self, argv: Optional[list[str]] = None) -> argparse.Namespace:
+        parser = argparse.ArgumentParser(prog="git reword", description=__doc__)
+        parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5)")
+        parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
+        parser.add_argument("--ollama", action="store_true", help="Use Ollama instead of Claude API")
+        parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
+        parser.add_argument("--debug", action="store_true", help="Print raw AI output")
+        parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
+        return parser.parse_args(argv)
 
-if [ "$AUTO" = true ]; then
-    if ! command -v curl &> /dev/null; then
-        echo "Error: curl is required for --auto mode." >&2
-        exit 1
-    fi
-    if ! command -v jq &> /dev/null; then
-        echo "Error: jq is required for --auto mode." >&2
-        exit 1
-    fi
 
-    if [ "$USE_OLLAMA" = true ]; then
-        if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
-            echo "Error: Ollama is not running at ${OLLAMA_URL}." >&2
-            echo "Start it with: ollama serve" >&2
-            exit 1
-        fi
-        echo "Calling Ollama (${OLLAMA_MODEL}) for $COUNT commit(s)..."
-    else
-        if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "Error: ANTHROPIC_API_KEY is not set. Export it before using --auto." >&2
-            exit 1
-        fi
-        echo "Calling Claude API for $COUNT commit(s)..."
-    fi
+class ConfigFactory:
+    def __init__(self, loader: GitConfigLoader):
+        self._loader = loader
 
-    i=0
-    for hash in "${HASHES[@]}"; do
-        i=$((i + 1))
-        printf "  [%d/%d] %s\n" "$i" "$COUNT" "$(echo "$hash" | cut -c1-7)"
-        call_api "$hash"
-    done
+    def from_args(self, args: argparse.Namespace) -> Config:
+        git_cfg = self._loader.load()
+        env_model = os.environ.get("OLLAMA_MODEL", "")
 
-    confirm_messages
+        ollama_model = args.ollama_model or env_model or git_cfg.get("ollamaModel", "llama3.2")
+        use_ollama = args.ollama or bool(env_model) or "ollamaModel" in git_cfg
+        auto = args.auto or use_ollama
 
-else
-    # ── Interactive mode: prompt for each commit ──────────────────────────────
-    for hash in "${HASHES[@]}"; do
-        echo ""
-        echo "──────────────────────────────────────────"
-        echo "Commit: $(echo "$hash" | cut -c1-7)"
-        git log -1 --format="Current: %s" "$hash"
-        echo ""
-        git diff-tree --no-commit-id -r --stat "$hash"
-        echo ""
-        read -rp "New message (≤5 words, blank = keep): " msg
-        if [ -z "$msg" ]; then
-            msg=$(git log -1 --format="%s" "$hash")
-        fi
-        echo "$msg" >> "$MESSAGES_FILE"
-    done
-fi
+        return Config(
+            since=args.since or "--root",
+            auto=auto,
+            debug=args.debug,
+            verify=args.verify or git_cfg.get("verify", "").lower() == "true",
+            use_ollama=use_ollama,
+            ollama_model=ollama_model,
+            ollama_url=os.environ.get("OLLAMA_HOST") or git_cfg.get("ollamaUrl", "http://localhost:11434"),
+            max_retries=int(git_cfg.get("retries", 3)),
+            context_lines=int(git_cfg.get("contextLines", 3)),
+            prompt_template=git_cfg.get("prompt"),
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        )
 
-# ── Build rebase automation scripts ──────────────────────────────────────────
-printf "#!/bin/bash\nsed -i '' 's/^pick/reword/' \"\$1\"\n" > "$SEQ_EDITOR"
-chmod +x "$SEQ_EDITOR"
 
-cat > "$MSG_EDITOR" << SCRIPT
-#!/bin/bash
-count=\$(cat "$COUNTER_FILE")
-count=\$((count + 1))
-echo \$count > "$COUNTER_FILE"
-sed -n "\${count}p" "$MESSAGES_FILE" > "\$1"
-SCRIPT
-chmod +x "$MSG_EDITOR"
+# ── Git client ─────────────────────────────────────────────────────────────────
 
-# ── Run the rebase ────────────────────────────────────────────────────────────
-if [ "$SINCE" = "--root" ]; then
-    GIT_SEQUENCE_EDITOR="$SEQ_EDITOR" GIT_EDITOR="$MSG_EDITOR" git rebase -i --root
-else
-    GIT_SEQUENCE_EDITOR="$SEQ_EDITOR" GIT_EDITOR="$MSG_EDITOR" git rebase -i "$SINCE"
-fi
+class GitClient:
+    def assert_in_repo(self) -> None:
+        result = subprocess.run(["git", "rev-parse", "--git-dir"], capture_output=True)
+        if result.returncode != 0:
+            print("Error: not inside a git repository.", file=sys.stderr)
+            sys.exit(1)
 
-echo ""
-echo "Done. $COUNT commit(s) reworded."
+    def get_hashes(self, since: str) -> list[str]:
+        cmd = ["git", "log", "--reverse", "--format=%H"]
+        if since != "--root":
+            cmd.append(f"{since}..HEAD")
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return [h for h in result.stdout.strip().splitlines() if h]
+
+    def get_diff(self, commit_hash: str, context_lines: int) -> str:
+        result = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "-p", f"-U{context_lines}", commit_hash],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout
+
+    def get_stat(self, commit_hash: str) -> str:
+        result = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "-r", "--stat", commit_hash],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout
+
+    def get_original_message(self, commit_hash: str) -> str:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%s", commit_hash],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.strip()
+
+    def rebase(self, since: str, messages: list[str], messages_file: Path) -> None:
+        messages_file.write_text("\n".join(messages) + "\n")
+
+        counter_file = Path(tempfile.mktemp())
+        counter_file.write_text("0")
+
+        seq_editor = Path(tempfile.mktemp(suffix=".py"))
+        seq_editor.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys, re\n"
+            "p = sys.argv[1]\n"
+            "open(p, 'w').write(re.sub(r'^pick\\b', 'reword', open(p).read(), flags=re.MULTILINE))\n"
+        )
+        seq_editor.chmod(seq_editor.stat().st_mode | stat.S_IEXEC)
+
+        msg_editor = Path(tempfile.mktemp(suffix=".py"))
+        msg_editor.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"cf, mf = '{counter_file}', '{messages_file}'\n"
+            "n = int(open(cf).read().strip()) + 1\n"
+            "open(cf, 'w').write(str(n))\n"
+            "lines = open(mf).read().splitlines()\n"
+            "open(sys.argv[1], 'w').write((lines[n - 1] if n <= len(lines) else '') + '\\n')\n"
+        )
+        msg_editor.chmod(msg_editor.stat().st_mode | stat.S_IEXEC)
+
+        try:
+            cmd = ["git", "rebase", "-i"] + (["--root"] if since == "--root" else [since])
+            subprocess.run(
+                cmd,
+                env={**os.environ, "GIT_SEQUENCE_EDITOR": str(seq_editor), "GIT_EDITOR": str(msg_editor)},
+                check=True,
+            )
+        finally:
+            for f in [counter_file, seq_editor, msg_editor]:
+                f.unlink(missing_ok=True)
+
+
+# ── Prompt builder ─────────────────────────────────────────────────────────────
+
+class PromptBuilder:
+    _DEFAULT = (
+        "Write a git commit message for the following diff.\n"
+        "- Use imperative mood (Add, Fix, Update, Remove, Refactor, etc.)\n"
+        "- At most 5 words\n"
+        "- Based solely on the lines changed\n"
+        "- Do NOT use variable names, code tokens, or string literals from the diff\n"
+        "- Describe what the change accomplishes\n"
+        "- Reply with ONLY the plain commit message text, no JSON, no formatting\n"
+        "\nDiff:\n{diff}"
+    )
+
+    _VERIFY = (
+        "Given the following diff and proposed commit message, return true if the message "
+        "accurately describes what changed, or false if it is inaccurate, misleading, "
+        "or uses code literals instead of describing intent.\n\n"
+        "Proposed message: {message}\n\nDiff:\n{diff}"
+    )
+
+    def build(self, diff: str, template: Optional[str] = None) -> str:
+        return (template or self._DEFAULT).replace("{diff}", diff)
+
+    def build_verify(self, message: str, diff: str) -> str:
+        return self._VERIFY.replace("{message}", message).replace("{diff}", diff)
+
+
+# ── AI providers ───────────────────────────────────────────────────────────────
+
+class AIProvider(ABC):
+    @abstractmethod
+    def generate(self, prompt: str) -> dict:
+        """Return structured commit message dict."""
+
+    @abstractmethod
+    def verify(self, prompt: str) -> dict:
+        """Return structured verification dict."""
+
+
+class OllamaProvider(AIProvider):
+    def __init__(self, url: str, model: str):
+        self._url = url.rstrip("/")
+        self._model = model
+        self._client = httpx.Client(timeout=120)
+
+    def check(self) -> None:
+        try:
+            self._client.get(f"{self._url}/api/tags")
+        except httpx.RequestError:
+            print(f"Error: Ollama is not running at {self._url}.\nStart with: ollama serve", file=sys.stderr)
+            sys.exit(1)
+
+    def _chat(self, prompt: str, schema: dict) -> dict:
+        response = self._client.post(
+            f"{self._url}/api/chat",
+            json={"model": self._model, "stream": False, "format": schema,
+                  "messages": [{"role": "user", "content": prompt}]},
+        )
+        response.raise_for_status()
+        return json.loads(response.json()["message"]["content"])
+
+    def generate(self, prompt: str) -> dict:
+        return self._chat(prompt, COMMIT_SCHEMA)
+
+    def verify(self, prompt: str) -> dict:
+        return self._chat(prompt, VERIFY_SCHEMA)
+
+
+class ClaudeProvider(AIProvider):
+    _URL = "https://api.anthropic.com/v1/messages"
+    _MODEL = "claude-haiku-4-5-20251001"
+
+    def __init__(self, api_key: str):
+        if not api_key:
+            print("Error: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+            sys.exit(1)
+        self._client = httpx.Client(
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+            timeout=120,
+        )
+
+    def _call(self, prompt: str, schema: dict, tool_name: str, max_tokens: int) -> dict:
+        response = self._client.post(self._URL, json={
+            "model": self._MODEL,
+            "max_tokens": max_tokens,
+            "tools": [{"name": tool_name, "description": tool_name, "input_schema": schema}],
+            "tool_choice": {"type": "tool", "name": tool_name},
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        response.raise_for_status()
+        return response.json()["content"][0]["input"]
+
+    def generate(self, prompt: str) -> dict:
+        return self._call(prompt, COMMIT_SCHEMA, "commit", max_tokens=64)
+
+    def verify(self, prompt: str) -> dict:
+        return self._call(prompt, VERIFY_SCHEMA, "verify", max_tokens=16)
+
+
+class ProviderFactory:
+    def create(self, config: Config) -> AIProvider:
+        if config.use_ollama:
+            provider = OllamaProvider(config.ollama_url, config.ollama_model)
+            provider.check()
+            return provider
+        return ClaudeProvider(config.anthropic_api_key)
+
+
+# ── Message generator ──────────────────────────────────────────────────────────
+
+class MessageGenerator:
+    def __init__(self, provider: AIProvider, prompt_builder: PromptBuilder, config: Config):
+        self._provider = provider
+        self._prompt_builder = prompt_builder
+        self._config = config
+
+    def generate(self, commit_hash: str, diff: str) -> Optional[str]:
+        prompt = self._prompt_builder.build(diff, self._config.prompt_template)
+        try:
+            result = self._provider.generate(prompt)
+            msg = result.get("message", "").strip()
+            if self._config.debug:
+                print(f"  [debug] {commit_hash[:7]}: {msg}", file=sys.stderr)
+            return msg or None
+        except Exception as exc:
+            if self._config.debug:
+                print(f"  [debug] {commit_hash[:7]}: error — {exc}", file=sys.stderr)
+            return None
+
+
+# ── Message verifier ───────────────────────────────────────────────────────────
+
+class MessageVerifier:
+    def __init__(self, provider: AIProvider, prompt_builder: PromptBuilder, config: Config):
+        self._provider = provider
+        self._prompt_builder = prompt_builder
+        self._config = config
+
+    def verify(self, message: str, diff: str) -> bool:
+        prompt = self._prompt_builder.build_verify(message, diff)
+        try:
+            result = self._provider.verify(prompt)
+            return bool(result.get("accurate", True))
+        except Exception:
+            return True  # fail open
+
+
+# ── Reword orchestrator ────────────────────────────────────────────────────────
+
+class Reworder:
+    def __init__(
+        self,
+        git: GitClient,
+        config: Config,
+        generator: Optional[MessageGenerator] = None,
+        verifier: Optional[MessageVerifier] = None,
+    ):
+        self._git = git
+        self._config = config
+        self._generator = generator
+        self._verifier = verifier
+
+    def run(self) -> None:
+        hashes = self._git.get_hashes(self._config.since)
+        if not hashes:
+            print("No commits to reword.")
+            return
+
+        count = len(hashes)
+        print(f"Rewording {count} commit(s)...")
+
+        messages = self._auto_mode(hashes) if self._config.auto else self._interactive_mode(hashes)
+        self._confirm_and_apply(hashes, messages)
+
+    def _auto_mode(self, hashes: list[str]) -> list[str]:
+        count = len(hashes)
+        for i, commit_hash in enumerate(hashes, 1):
+            print(f"  [{i}/{count}] {commit_hash[:7]}")
+        return [self._generate_with_retry(h) for h in hashes]
+
+    def _generate_with_retry(self, commit_hash: str) -> str:
+        diff = self._git.get_diff(commit_hash, self._config.context_lines)
+        msg = (self._generator.generate(commit_hash, diff)
+               or self._git.get_original_message(commit_hash))
+
+        if not self._verifier:
+            return msg
+
+        attempt = 0
+        while not self._verifier.verify(msg, diff):
+            if self._config.debug:
+                print(f"  [verify] {commit_hash[:7]}: rejected (attempt {attempt + 1}/{self._config.max_retries})", file=sys.stderr)
+            if attempt >= self._config.max_retries:
+                if self._config.debug:
+                    print(f"  [verify] {commit_hash[:7]}: max retries reached → keeping original", file=sys.stderr)
+                return self._git.get_original_message(commit_hash)
+            attempt += 1
+            ctx = self._config.context_lines * (attempt + 1)
+            if self._config.debug:
+                print(f"  [verify] {commit_hash[:7]}: retrying with {ctx} context lines", file=sys.stderr)
+            diff = self._git.get_diff(commit_hash, ctx)
+            msg = (self._generator.generate(commit_hash, diff)
+                   or self._git.get_original_message(commit_hash))
+
+        if self._config.debug:
+            print(f"  [verify] {commit_hash[:7]}: accurate", file=sys.stderr)
+        return msg
+
+    def _interactive_mode(self, hashes: list[str]) -> list[str]:
+        messages = []
+        for commit_hash in hashes:
+            print("\n──────────────────────────────────────────")
+            print(f"Commit: {commit_hash[:7]}")
+            print(f"Current: {self._git.get_original_message(commit_hash)}")
+            print()
+            print(self._git.get_stat(commit_hash))
+            msg = input("New message (≤5 words, blank = keep): ").strip()
+            messages.append(msg or self._git.get_original_message(commit_hash))
+        return messages
+
+    def _confirm_and_apply(self, hashes: list[str], messages: list[str]) -> None:
+        print("\nGenerated messages:")
+        print("───────────────────")
+        for commit_hash, msg in zip(hashes, messages):
+            print(f"  {commit_hash[:7]}  {msg}")
+        print()
+
+        confirm = input("Apply these messages? [Y/n] ").strip().lower()
+        if confirm == "n":
+            print("Aborted.")
+            return
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            messages_file = Path(f.name)
+        try:
+            self._git.rebase(self._config.since, messages, messages_file)
+            print(f"\nDone. {len(messages)} commit(s) reworded.")
+        finally:
+            messages_file.unlink(missing_ok=True)
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    args = CLIParser().parse()
+    git = GitClient()
+    git.assert_in_repo()
+
+    config = ConfigFactory(GitConfigLoader()).from_args(args)
+
+    generator: Optional[MessageGenerator] = None
+    verifier: Optional[MessageVerifier] = None
+
+    if config.auto:
+        provider = ProviderFactory().create(config)
+        prompt_builder = PromptBuilder()
+        generator = MessageGenerator(provider, prompt_builder, config)
+        if config.verify:
+            verifier = MessageVerifier(provider, prompt_builder, config)
+
+    Reworder(git, config, generator, verifier).run()
+
+
+if __name__ == "__main__":
+    main()
