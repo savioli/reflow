@@ -173,8 +173,12 @@ class ConfigFactory:
         use_claude = args.claude or "claudeModel" in git_cfg or default_provider == "claude"
         auto = args.auto or use_ollama or use_openai or use_claude
 
+        since_raw = args.since or "--root"
+        if since_raw.isdigit():
+            since_raw = f"HEAD~{since_raw}"
+
         return Config(
-            since=args.since or "--root",
+            since=since_raw,
             auto=auto,
             checkpoint=args.checkpoint,
             branch=args.branch,
