@@ -28,7 +28,6 @@ Examples:
     --auto                              auto-generate messages via AI
     --branch / -b                       generate and rename current branch
     --prefix PREFIX                     prefix for branch name (e.g. feature, fix, chore)
-    --verify                            verify each message with a second AI call
     -v / -vvv                           verbosity (AI output / + prompts)
 
   Provider flags:
@@ -50,8 +49,6 @@ Git config (per-repo defaults):
   reword.contextLines       diff context lines for commit rewording (default: 3)
   reword.branchContextLines diff context lines for branch naming (default: 3)
   reword.branchPrefix       default prefix for generated branch names
-  reword.verify             true to verify each message with a second AI call
-  reword.retries            max verification retries (default: 3)
   reword.prompt             custom prompt template (must include {diff})
 
 API keys (env vars):
@@ -84,13 +81,6 @@ COMMIT_SCHEMA = {
     "required": ["message"],
 }
 
-VERIFY_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {"accurate": {"type": "boolean"}},
-    "required": ["accurate"],
-}
-
 BRANCH_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -108,7 +98,6 @@ class Config:
     checkpoint: bool = False
     branch: bool = False
     verbosity: int = 0
-    verify: bool = False
     use_claude: bool = False
     claude_model: str = "claude-haiku-4-5-20251001"
     use_ollama: bool = False
@@ -118,7 +107,6 @@ class Config:
     openai_model: str = "gpt-4o-mini"
     openai_url: Optional[str] = None
     openai_api_key: str = ""
-    max_retries: int = 3
     context_lines: int = 3
     branch_context_lines: int = 3
     branch_prefix: str = ""
@@ -127,7 +115,7 @@ class Config:
 
 
 class GitConfigLoader:
-    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix", "verify", "retries"]
+    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -166,7 +154,6 @@ class CLIParser:
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
         parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name (e.g. feature, fix, chore)")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
-        parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
         args = parser.parse_args(argv)
         args.checkpoint = checkpoint
         return args
@@ -191,7 +178,6 @@ class ConfigFactory:
             checkpoint=args.checkpoint,
             branch=args.branch,
             verbosity=args.verbose,
-            verify=args.verify or git_cfg.get("verify", "").lower() == "true",
             use_claude=use_claude,
             claude_model=args.claude_model or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
             use_ollama=use_ollama,
@@ -201,7 +187,6 @@ class ConfigFactory:
             openai_model=args.openai_model or git_cfg.get("openaiModel", "gpt-4o-mini"),
             openai_url=git_cfg.get("openaiUrl") or None,
             openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-            max_retries=int(git_cfg.get("retries", 3)),
             context_lines=int(git_cfg.get("contextLines", 3)),
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
@@ -402,24 +387,6 @@ class PromptBuilder:
         "Diff:\n{diff}"
     )
 
-    _VERIFY = (
-        "Evaluate the proposed commit message against the diff.\n"
-        "Return accurate=true only if ALL of the following hold:\n"
-        "1. The message accurately describes what changed\n"
-        "2. It starts with an imperative verb (Add, Fix, Update, Remove, Refactor, etc.)\n"
-        "3. It is 5 words or fewer\n"
-        "4. It contains no filenames, variable names, function names, or code tokens\n"
-        "Otherwise return accurate=false.\n"
-        "\n"
-        "Proposed message: {message}\n\nDiff:\n{diff}"
-    )
-
-    def build(self, diff: str, template: Optional[str] = None) -> str:
-        if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
-            print("Warning: reword.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
-            self._warned_diff = True
-        return (template or self._DEFAULT).replace("{diff}", diff)
-
     _BRANCH = (
         "Generate a git branch name for the following diff.\n"
         "\n"
@@ -432,8 +399,11 @@ class PromptBuilder:
         "Diff:\n{diff}"
     )
 
-    def build_verify(self, message: str, diff: str) -> str:
-        return self._VERIFY.replace("{message}", message).replace("{diff}", diff)
+    def build(self, diff: str, template: Optional[str] = None) -> str:
+        if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
+            print("Warning: reword.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+            self._warned_diff = True
+        return (template or self._DEFAULT).replace("{diff}", diff)
 
     def build_branch(self, diff: str) -> str:
         return self._BRANCH.replace("{diff}", diff)
@@ -449,21 +419,12 @@ class AIProvider(ABC):
 
     @property
     @abstractmethod
-    def verify_system(self) -> str:
-        """System message used for verification."""
-
-    @property
-    @abstractmethod
     def branch_system(self) -> str:
         """System message used for branch name generation."""
 
     @abstractmethod
     def generate(self, prompt: str) -> dict:
         """Return structured commit message dict."""
-
-    @abstractmethod
-    def verify(self, prompt: str) -> dict:
-        """Return structured verification dict."""
 
     @abstractmethod
     def generate_branch(self, prompt: str) -> dict:
@@ -475,11 +436,6 @@ class OllamaProvider(AIProvider):
         "You are a git commit message generator. "
         "Output only a short imperative commit message (≤5 words). "
         "No explanation, no chat, no preamble, no JSON wrapper."
-    )
-    _VERIFY_SYSTEM = (
-        "You are a code reviewer. "
-        "Evaluate whether the proposed commit message accurately describes the diff. "
-        "Output only a JSON object with a boolean field."
     )
     _BRANCH_SYSTEM = (
         "You are a git branch name generator. "
@@ -520,18 +476,11 @@ class OllamaProvider(AIProvider):
         return self._GENERATE_SYSTEM
 
     @property
-    def verify_system(self) -> str:
-        return self._VERIFY_SYSTEM
-
-    @property
     def branch_system(self) -> str:
         return self._BRANCH_SYSTEM
 
     def generate(self, prompt: str) -> dict:
         return self._chat(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
-
-    def verify(self, prompt: str) -> dict:
-        return self._chat(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
 
     def generate_branch(self, prompt: str) -> dict:
         return self._chat(prompt, BRANCH_SCHEMA, self._BRANCH_SYSTEM)
@@ -542,11 +491,6 @@ class ClaudeProvider(AIProvider):
         "You are a git commit message generator. "
         "Output only a short imperative commit message (≤5 words) via the tool. "
         "No explanation, no chat, no preamble."
-    )
-    _VERIFY_SYSTEM = (
-        "You are a code reviewer. "
-        "Evaluate whether the proposed commit message accurately describes the diff. "
-        "Use the tool to return your answer."
     )
     _BRANCH_SYSTEM = (
         "You are a git branch name generator. "
@@ -582,18 +526,11 @@ class ClaudeProvider(AIProvider):
         return self._GENERATE_SYSTEM
 
     @property
-    def verify_system(self) -> str:
-        return self._VERIFY_SYSTEM
-
-    @property
     def branch_system(self) -> str:
         return self._BRANCH_SYSTEM
 
     def generate(self, prompt: str) -> dict:
         return self._call(prompt, COMMIT_SCHEMA, "commit", max_tokens=64, system=self._GENERATE_SYSTEM)
-
-    def verify(self, prompt: str) -> dict:
-        return self._call(prompt, VERIFY_SCHEMA, "verify", max_tokens=16, system=self._VERIFY_SYSTEM)
 
     def generate_branch(self, prompt: str) -> dict:
         return self._call(prompt, BRANCH_SCHEMA, "branch", max_tokens=32, system=self._BRANCH_SYSTEM)
@@ -604,11 +541,6 @@ class OpenAIProvider(AIProvider):
         "You are a git commit message generator. "
         "Output only a short imperative commit message (≤5 words). "
         "No explanation, no chat, no preamble."
-    )
-    _VERIFY_SYSTEM = (
-        "You are a code reviewer. "
-        "Evaluate whether the proposed commit message accurately describes the diff. "
-        "Return your answer as JSON."
     )
     _BRANCH_SYSTEM = (
         "You are a git branch name generator. "
@@ -647,18 +579,11 @@ class OpenAIProvider(AIProvider):
         return self._GENERATE_SYSTEM
 
     @property
-    def verify_system(self) -> str:
-        return self._VERIFY_SYSTEM
-
-    @property
     def branch_system(self) -> str:
         return self._BRANCH_SYSTEM
 
     def generate(self, prompt: str) -> dict:
         return self._call(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
-
-    def verify(self, prompt: str) -> dict:
-        return self._call(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
 
     def generate_branch(self, prompt: str) -> dict:
         return self._call(prompt, BRANCH_SCHEMA, self._BRANCH_SYSTEM)
@@ -703,27 +628,6 @@ class MessageGenerator:
             if self._config.verbosity >= 1:
                 print(f"  [debug] {commit_hash[:7]}: error — {exc}", file=sys.stderr)
             return None
-
-
-# ── Message verifier ───────────────────────────────────────────────────────────
-
-class MessageVerifier:
-    def __init__(self, provider: AIProvider, prompt_builder: PromptBuilder, config: Config):
-        self._provider = provider
-        self._prompt_builder = prompt_builder
-        self._config = config
-
-    def verify(self, message: str, diff: str, commit_hash: str = "") -> bool:
-        prompt = self._prompt_builder.build_verify(message, diff)
-        if self._config.verbosity >= 3:
-            prefix = f" {commit_hash[:7]}" if commit_hash else ""
-            print(f"  [verify-prompt:system]{prefix}: {self._provider.verify_system}", file=sys.stderr)
-            print(f"  [verify-prompt:user]{prefix}:\n{prompt}", file=sys.stderr)
-        try:
-            result = self._provider.verify(prompt)
-            return bool(result.get("accurate", True))
-        except Exception:
-            return True  # fail open
 
 
 # ── Checkpoint generator ───────────────────────────────────────────────────────
@@ -780,12 +684,10 @@ class Reworder:
         git: GitClient,
         config: Config,
         generator: Optional[MessageGenerator] = None,
-        verifier: Optional[MessageVerifier] = None,
     ):
         self._git = git
         self._config = config
         self._generator = generator
-        self._verifier = verifier
 
     def run(self) -> None:
         since = self._git.resolve_since(self._config.since)
@@ -808,36 +710,10 @@ class Reworder:
         count = len(hashes)
         for i, commit_hash in enumerate(hashes, 1):
             print(f"  [{i}/{count}] {commit_hash[:7]}")
-            messages.append(self._generate_with_retry(commit_hash))
+            diff = self._git.get_diff(commit_hash, self._config.context_lines)
+            msg = self._generator.generate(commit_hash, diff) or self._git.get_original_message(commit_hash)
+            messages.append(msg)
         return messages
-
-    def _generate_with_retry(self, commit_hash: str) -> str:
-        diff = self._git.get_diff(commit_hash, self._config.context_lines)
-        msg = (self._generator.generate(commit_hash, diff)
-               or self._git.get_original_message(commit_hash))
-
-        if not self._verifier:
-            return msg
-
-        attempt = 0
-        while not self._verifier.verify(msg, diff, commit_hash):
-            if self._config.verbosity >= 1:
-                print(f"  [verify] {commit_hash[:7]}: rejected (attempt {attempt + 1}/{self._config.max_retries})", file=sys.stderr)
-            if attempt >= self._config.max_retries:
-                if self._config.verbosity >= 1:
-                    print(f"  [verify] {commit_hash[:7]}: max retries reached → keeping original", file=sys.stderr)
-                return self._git.get_original_message(commit_hash)
-            attempt += 1
-            ctx = self._config.context_lines * (attempt + 1)
-            if self._config.verbosity >= 1:
-                print(f"  [verify] {commit_hash[:7]}: retrying with {ctx} context lines", file=sys.stderr)
-            diff = self._git.get_diff(commit_hash, ctx)
-            msg = (self._generator.generate(commit_hash, diff)
-                   or self._git.get_original_message(commit_hash))
-
-        if self._config.verbosity >= 1:
-            print(f"  [verify] {commit_hash[:7]}: accurate", file=sys.stderr)
-        return msg
 
     def _interactive_mode(self, hashes: list[str]) -> list[str]:
         messages = []
@@ -923,16 +799,12 @@ def main() -> None:
         return
 
     generator: Optional[MessageGenerator] = None
-    verifier: Optional[MessageVerifier] = None
 
     if config.auto:
         provider = ProviderFactory().create(config)
-        prompt_builder = PromptBuilder()
-        generator = MessageGenerator(provider, prompt_builder, config)
-        if config.verify:
-            verifier = MessageVerifier(provider, prompt_builder, config)
+        generator = MessageGenerator(provider, PromptBuilder(), config)
 
-    Reworder(git, config, generator, verifier).run()
+    Reworder(git, config, generator).run()
 
 
 if __name__ == "__main__":
