@@ -34,9 +34,11 @@ fi
 mkdir -p "$BIN_DIR"
 
 # Copy and make executable
-cp "$SCRIPT_DIR/git-reword" "$BIN_DIR/git-reword"
-chmod +x "$BIN_DIR/git-reword"
-echo "  Installed to $BIN_DIR/git-reword"
+for cmd in git-reword git-rw git-ck; do
+    cp "$SCRIPT_DIR/$cmd" "$BIN_DIR/$cmd"
+    chmod +x "$BIN_DIR/$cmd"
+    echo "  Installed to $BIN_DIR/$cmd"
+done
 
 # Add ~/bin to PATH if not already there
 add_to_path() {
