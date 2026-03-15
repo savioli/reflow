@@ -34,10 +34,14 @@ fi
 mkdir -p "$BIN_DIR"
 
 # Copy and make executable
-for cmd in git-reword git-rw git-ck; do
-    cp "$SCRIPT_DIR/$cmd" "$BIN_DIR/$cmd"
-    chmod +x "$BIN_DIR/$cmd"
-    echo "  Installed to $BIN_DIR/$cmd"
+cp "$SCRIPT_DIR/git-reword" "$BIN_DIR/git-reword"
+chmod +x "$BIN_DIR/git-reword"
+echo "  Installed to $BIN_DIR/git-reword"
+
+# Short aliases as symlinks
+for alias in git-rw git-ck; do
+    ln -sf "$BIN_DIR/git-reword" "$BIN_DIR/$alias"
+    echo "  Linked $BIN_DIR/$alias → git-reword"
 done
 
 # Add ~/bin to PATH if not already there

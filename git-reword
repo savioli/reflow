@@ -685,6 +685,10 @@ class Reworder:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    invoked_as = os.path.basename(sys.argv[0])
+    if invoked_as == "git-ck":
+        sys.argv.insert(1, "checkpoint")
+
     args = CLIParser().parse()
     git = GitClient()
     git.assert_in_repo()
