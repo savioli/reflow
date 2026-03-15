@@ -2,31 +2,61 @@
 """git-reword — reword commit messages interactively or via AI.
 
 Subcommands:
-  checkpoint          commit staged changes as Checkpoint #N (continues enumeration)
+  checkpoint            commit staged changes as Checkpoint #N (continues enumeration)
 
 Examples:
-  git reword                        reword branch commits interactively
-  git reword HEAD~5                 reword last 5 commits interactively
-  git reword --auto --claude        auto-generate messages via Claude
-  git reword --auto --openai        auto-generate messages via OpenAI
-  git reword --auto --ollama        auto-generate messages via Ollama
-  git reword HEAD~5 --auto --claude auto mode on explicit range
-  git reword checkpoint             commit staged changes as Checkpoint #N
+  Interactive (branch commits only by default):
+    git reword                          reword branch commits interactively
+    git reword HEAD~5                   reword last 5 commits interactively
+
+  Auto mode (requires a provider flag or reword.provider git config):
+    git reword --auto --claude          auto-generate via Claude
+    git reword --auto --openai          auto-generate via OpenAI
+    git reword --auto --ollama          auto-generate via Ollama
+    git reword HEAD~5 --auto --claude   auto mode on explicit range
+
+  Branch rename:
+    git reword --branch --claude        generate and rename current branch via Claude
+    git rw -b --openai                  short form
+    git rw -b --claude --prefix feature force a branch prefix
+
+  Checkpoint:
+    git reword checkpoint               commit staged changes as Checkpoint #N
+    git ck                              short alias
+
+  Flags:
+    --auto                              auto-generate messages via AI
+    --branch / -b                       generate and rename current branch
+    --prefix PREFIX                     prefix for branch name (e.g. feature, fix, chore)
+    --verify                            verify each message with a second AI call
+    -v / -vvv                           verbosity (AI output / + prompts)
+
+  Provider flags:
+    --claude                            use Claude (requires ANTHROPIC_API_KEY)
+    --openai                            use OpenAI (requires OPENAI_API_KEY)
+    --ollama                            use Ollama
+
+  Provider model overrides:
+    --claude-model MODEL                Claude model name
+    --openai-model MODEL                OpenAI model name
+    --ollama-model MODEL                Ollama model name
 
 Git config (per-repo defaults):
-  reword.provider       claude | openai | ollama
-  reword.claudeModel    model name for Claude
-  reword.openaiModel    model name for OpenAI
-  reword.ollamaModel    model name for Ollama
-  reword.ollamaUrl      Ollama base URL (default: http://localhost:11434)
-  reword.contextLines   diff context lines (default: 3)
-  reword.verify         true to verify each message with a second AI call
-  reword.retries        max verification retries (default: 3)
-  reword.prompt         custom prompt template (must include {diff})
+  reword.provider           claude | openai | ollama
+  reword.claudeModel        model name for Claude
+  reword.openaiModel        model name for OpenAI
+  reword.ollamaModel        model name for Ollama
+  reword.ollamaUrl          Ollama base URL (default: http://localhost:11434)
+  reword.contextLines       diff context lines for commit rewording (default: 3)
+  reword.branchContextLines diff context lines for branch naming (default: 3)
+  reword.branchPrefix       default prefix for generated branch names
+  reword.verify             true to verify each message with a second AI call
+  reword.retries            max verification retries (default: 3)
+  reword.prompt             custom prompt template (must include {diff})
 
 API keys (env vars):
-  ANTHROPIC_API_KEY     required for --claude
-  OPENAI_API_KEY        required for --openai
+  ANTHROPIC_API_KEY         required for --claude
+  OPENAI_API_KEY            required for --openai
 """
 
 import argparse
@@ -61,6 +91,13 @@ VERIFY_SCHEMA = {
     "required": ["accurate"],
 }
 
+BRANCH_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"name": {"type": "string", "minLength": 1}},
+    "required": ["name"],
+}
+
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -69,6 +106,7 @@ class Config:
     since: str = "--root"
     auto: bool = False
     checkpoint: bool = False
+    branch: bool = False
     verbosity: int = 0
     verify: bool = False
     use_claude: bool = False
@@ -82,12 +120,14 @@ class Config:
     openai_api_key: str = ""
     max_retries: int = 3
     context_lines: int = 3
+    branch_context_lines: int = 3
+    branch_prefix: str = ""
     prompt_template: Optional[str] = None
     anthropic_api_key: str = ""
 
 
 class GitConfigLoader:
-    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "verify", "retries"]
+    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix", "verify", "retries"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -123,6 +163,8 @@ class CLIParser:
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
         parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires OPENAI_API_KEY)")
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
+        parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
+        parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name (e.g. feature, fix, chore)")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
         parser.add_argument("--verify", action="store_true", help="Verify each message with a second AI call")
         args = parser.parse_args(argv)
@@ -147,6 +189,7 @@ class ConfigFactory:
             since=args.since or "--root",
             auto=auto,
             checkpoint=args.checkpoint,
+            branch=args.branch,
             verbosity=args.verbose,
             verify=args.verify or git_cfg.get("verify", "").lower() == "true",
             use_claude=use_claude,
@@ -160,6 +203,8 @@ class ConfigFactory:
             openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
             max_retries=int(git_cfg.get("retries", 3)),
             context_lines=int(git_cfg.get("contextLines", 3)),
+            branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
+            branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
             prompt_template=git_cfg.get("prompt"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
@@ -176,24 +221,53 @@ class GitClient:
 
     def _get_branch_base(self) -> str:
         """Return merge-base commit hash where current branch diverged, or '' if undetermined."""
+        # Prefer explicit upstream
         up = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
             capture_output=True, text=True,
         )
-        ref = up.stdout.strip() if up.returncode == 0 else None
-        if not ref:
-            for candidate in ["origin/HEAD", "origin/main", "origin/master", "main", "master"]:
-                if subprocess.run(["git", "rev-parse", "--verify", candidate], capture_output=True).returncode == 0:
-                    ref = candidate
-                    break
-        if not ref:
-            return ""
-        base = subprocess.run(["git", "merge-base", "HEAD", ref], capture_output=True, text=True)
-        if base.returncode != 0:
-            return ""
-        merge_base = base.stdout.strip()
-        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
-        return "" if merge_base == head.stdout.strip() else merge_base
+        if up.returncode == 0 and up.stdout.strip():
+            base = subprocess.run(
+                ["git", "merge-base", "HEAD", up.stdout.strip()],
+                capture_output=True, text=True,
+            )
+            if base.returncode == 0:
+                merge_base = base.stdout.strip()
+                head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+                if merge_base != head.stdout.strip():
+                    return merge_base
+
+        # Find closest merge-base across all local and remote branches
+        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        current = self.get_current_branch()
+        refs = subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/", "refs/remotes/"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip().splitlines()
+
+        best_base = ""
+        best_count = None
+        for ref in refs:
+            if ref == current or ref.endswith("/HEAD"):
+                continue
+            mb = subprocess.run(["git", "merge-base", "HEAD", ref], capture_output=True, text=True)
+            if mb.returncode != 0:
+                continue
+            merge_base = mb.stdout.strip()
+            if merge_base == head:
+                continue
+            count_result = subprocess.run(
+                ["git", "rev-list", "--count", f"{merge_base}..HEAD"],
+                capture_output=True, text=True,
+            )
+            if count_result.returncode != 0:
+                continue
+            count = int(count_result.stdout.strip())
+            if count > 0 and (best_count is None or count < best_count):
+                best_base = merge_base
+                best_count = count
+
+        return best_base
 
     def resolve_since(self, since: str) -> str:
         """Resolve '--root' to the branch merge-base, falling back to '--root' if none found."""
@@ -215,6 +289,34 @@ class GitClient:
             capture_output=True, text=True, check=True,
         )
         return result.stdout
+
+    def get_current_branch(self) -> str:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.strip()
+
+    def get_range_diff(self, since: str, context_lines: int = 3) -> str:
+        ctx = f"-U{context_lines}"
+        if since == "--root":
+            root = subprocess.run(
+                ["git", "rev-list", "--max-parents=0", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            result = subprocess.run(
+                ["git", "diff", ctx, f"{root}..HEAD"],
+                capture_output=True, text=True, check=True,
+            )
+        else:
+            result = subprocess.run(
+                ["git", "diff", ctx, f"{since}..HEAD"],
+                capture_output=True, text=True, check=True,
+            )
+        return result.stdout
+
+    def rename_branch(self, name: str) -> None:
+        subprocess.run(["git", "branch", "-m", name], check=True)
 
     def get_stat(self, commit_hash: str) -> str:
         result = subprocess.run(
@@ -318,8 +420,23 @@ class PromptBuilder:
             self._warned_diff = True
         return (template or self._DEFAULT).replace("{diff}", diff)
 
+    _BRANCH = (
+        "Generate a git branch name for the following diff.\n"
+        "\n"
+        "Rules (follow strictly):\n"
+        "1. kebab-case: lowercase letters, numbers, and hyphens only\n"
+        "2. 2 to 5 words\n"
+        "3. Describes the purpose of the changes (e.g. add-user-auth, fix-payment-crash, refactor-api-layer)\n"
+        "4. No special characters except hyphens\n"
+        "\n"
+        "Diff:\n{diff}"
+    )
+
     def build_verify(self, message: str, diff: str) -> str:
         return self._VERIFY.replace("{message}", message).replace("{diff}", diff)
+
+    def build_branch(self, diff: str) -> str:
+        return self._BRANCH.replace("{diff}", diff)
 
 
 # ── AI providers ───────────────────────────────────────────────────────────────
@@ -335,6 +452,11 @@ class AIProvider(ABC):
     def verify_system(self) -> str:
         """System message used for verification."""
 
+    @property
+    @abstractmethod
+    def branch_system(self) -> str:
+        """System message used for branch name generation."""
+
     @abstractmethod
     def generate(self, prompt: str) -> dict:
         """Return structured commit message dict."""
@@ -342,6 +464,10 @@ class AIProvider(ABC):
     @abstractmethod
     def verify(self, prompt: str) -> dict:
         """Return structured verification dict."""
+
+    @abstractmethod
+    def generate_branch(self, prompt: str) -> dict:
+        """Return structured branch name dict."""
 
 
 class OllamaProvider(AIProvider):
@@ -354,6 +480,11 @@ class OllamaProvider(AIProvider):
         "You are a code reviewer. "
         "Evaluate whether the proposed commit message accurately describes the diff. "
         "Output only a JSON object with a boolean field."
+    )
+    _BRANCH_SYSTEM = (
+        "You are a git branch name generator. "
+        "Output only a short kebab-case branch name (2-5 words). "
+        "No explanation, no chat, no preamble, no JSON wrapper."
     )
 
     def __init__(self, url: str, model: str):
@@ -392,11 +523,18 @@ class OllamaProvider(AIProvider):
     def verify_system(self) -> str:
         return self._VERIFY_SYSTEM
 
+    @property
+    def branch_system(self) -> str:
+        return self._BRANCH_SYSTEM
+
     def generate(self, prompt: str) -> dict:
         return self._chat(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
 
     def verify(self, prompt: str) -> dict:
         return self._chat(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
+
+    def generate_branch(self, prompt: str) -> dict:
+        return self._chat(prompt, BRANCH_SCHEMA, self._BRANCH_SYSTEM)
 
 
 class ClaudeProvider(AIProvider):
@@ -409,6 +547,11 @@ class ClaudeProvider(AIProvider):
         "You are a code reviewer. "
         "Evaluate whether the proposed commit message accurately describes the diff. "
         "Use the tool to return your answer."
+    )
+    _BRANCH_SYSTEM = (
+        "You are a git branch name generator. "
+        "Output only a short kebab-case branch name (2-5 words) via the tool. "
+        "No explanation, no chat, no preamble."
     )
 
     def __init__(self, api_key: str, model: str):
@@ -442,11 +585,18 @@ class ClaudeProvider(AIProvider):
     def verify_system(self) -> str:
         return self._VERIFY_SYSTEM
 
+    @property
+    def branch_system(self) -> str:
+        return self._BRANCH_SYSTEM
+
     def generate(self, prompt: str) -> dict:
         return self._call(prompt, COMMIT_SCHEMA, "commit", max_tokens=64, system=self._GENERATE_SYSTEM)
 
     def verify(self, prompt: str) -> dict:
         return self._call(prompt, VERIFY_SCHEMA, "verify", max_tokens=16, system=self._VERIFY_SYSTEM)
+
+    def generate_branch(self, prompt: str) -> dict:
+        return self._call(prompt, BRANCH_SCHEMA, "branch", max_tokens=32, system=self._BRANCH_SYSTEM)
 
 
 class OpenAIProvider(AIProvider):
@@ -459,6 +609,11 @@ class OpenAIProvider(AIProvider):
         "You are a code reviewer. "
         "Evaluate whether the proposed commit message accurately describes the diff. "
         "Return your answer as JSON."
+    )
+    _BRANCH_SYSTEM = (
+        "You are a git branch name generator. "
+        "Output only a short kebab-case branch name (2-5 words). "
+        "No explanation, no chat, no preamble."
     )
 
     def __init__(self, api_key: str, model: str, base_url: Optional[str] = None):
@@ -495,11 +650,18 @@ class OpenAIProvider(AIProvider):
     def verify_system(self) -> str:
         return self._VERIFY_SYSTEM
 
+    @property
+    def branch_system(self) -> str:
+        return self._BRANCH_SYSTEM
+
     def generate(self, prompt: str) -> dict:
         return self._call(prompt, COMMIT_SCHEMA, self._GENERATE_SYSTEM)
 
     def verify(self, prompt: str) -> dict:
         return self._call(prompt, VERIFY_SCHEMA, self._VERIFY_SYSTEM)
+
+    def generate_branch(self, prompt: str) -> dict:
+        return self._call(prompt, BRANCH_SCHEMA, self._BRANCH_SYSTEM)
 
 
 class ProviderFactory:
@@ -580,6 +742,34 @@ class CheckpointGenerator:
             if m:
                 max_n = max(max_n, int(m.group(1)))
         return f"Checkpoint #{max_n + 1}"
+
+
+# ── Branch name generator ──────────────────────────────────────────────────────
+
+class BranchNameGenerator:
+    def __init__(self, git: GitClient, provider: AIProvider, prompt_builder: PromptBuilder, config: Config):
+        self._git = git
+        self._provider = provider
+        self._prompt_builder = prompt_builder
+        self._config = config
+
+    def generate(self, since: str) -> Optional[str]:
+        diff = self._git.get_range_diff(since, self._config.branch_context_lines)
+        prompt = self._prompt_builder.build_branch(diff)
+        if self._config.verbosity >= 3:
+            print(f"  [branch-prompt:system]: {self._provider.branch_system}", file=sys.stderr)
+            print(f"  [branch-prompt:user]:\n{prompt}", file=sys.stderr)
+        try:
+            result = self._provider.generate_branch(prompt)
+            name = result.get("name", "").strip().lower()
+            name = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+            if self._config.verbosity >= 1:
+                print(f"  [branch] generated: {name}", file=sys.stderr)
+            return name or None
+        except Exception as exc:
+            if self._config.verbosity >= 1:
+                print(f"  [branch] error — {exc}", file=sys.stderr)
+            return None
 
 
 # ── Reword orchestrator ────────────────────────────────────────────────────────
@@ -682,6 +872,13 @@ class Reworder:
             messages_file.unlink(missing_ok=True)
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _extract_branch_prefix(branch_name: str) -> str:
+    m = re.match(r"^([a-z][a-z0-9-]*)\/", branch_name)
+    return m.group(1) if m else ""
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -702,6 +899,27 @@ def main() -> None:
         msg = CheckpointGenerator().next_message()
         print(f"Committing staged changes as: {msg}")
         git.commit(msg)
+        return
+
+    if config.branch:
+        current = git.get_current_branch()
+        if current == "HEAD":
+            print("Error: detached HEAD state.", file=sys.stderr)
+            sys.exit(1)
+        since = git.resolve_since(config.since)
+        provider = ProviderFactory().create(config)
+        bare_name = BranchNameGenerator(git, provider, PromptBuilder(), config).generate(since)
+        if not bare_name:
+            print("Error: could not generate branch name.", file=sys.stderr)
+            sys.exit(1)
+        prefix = config.branch_prefix or _extract_branch_prefix(current)
+        full_name = f"{prefix}/{bare_name}" if prefix else bare_name
+        print(f"  Current:   {current}")
+        print(f"  Generated: {full_name}")
+        confirm = input("Rename branch? [Y/n] ").strip().lower()
+        if confirm != "n":
+            git.rename_branch(full_name)
+            print(f"Branch renamed to: {full_name}")
         return
 
     generator: Optional[MessageGenerator] = None
