@@ -110,12 +110,13 @@ class Config:
     context_lines: int = 3
     branch_context_lines: int = 3
     branch_prefix: str = ""
+    checkpoint_auto_stage: bool = True
     prompt_template: Optional[str] = None
     anthropic_api_key: str = ""
 
 
 class GitConfigLoader:
-    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix"]
+    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix", "checkpointAutoStage"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -190,6 +191,7 @@ class ConfigFactory:
             context_lines=int(git_cfg.get("contextLines", 3)),
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
+            checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
             prompt_template=git_cfg.get("prompt"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
@@ -309,6 +311,9 @@ class GitClient:
             capture_output=True, text=True, check=True,
         )
         return result.stdout
+
+    def stage_all(self) -> None:
+        subprocess.run(["git", "add", "-A"], check=True)
 
     def has_staged_changes(self) -> bool:
         result = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True)
@@ -769,11 +774,13 @@ def main() -> None:
     config = ConfigFactory(GitConfigLoader()).from_args(args)
 
     if config.checkpoint:
+        if config.checkpoint_auto_stage:
+            git.stage_all()
         if not git.has_staged_changes():
-            print("Error: no staged changes. Stage files with git add first.", file=sys.stderr)
+            print("Error: nothing to commit.", file=sys.stderr)
             sys.exit(1)
         msg = CheckpointGenerator().next_message()
-        print(f"Committing staged changes as: {msg}")
+        print(f"Committing as: {msg}")
         git.commit(msg)
         return
 
