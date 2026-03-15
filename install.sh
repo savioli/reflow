@@ -39,7 +39,7 @@ chmod +x "$BIN_DIR/git-reword"
 echo "  Installed to $BIN_DIR/git-reword"
 
 # Short aliases as symlinks
-for alias in git-rw git-ck; do
+for alias in git-rw git-ck git-rb; do
     ln -sf "$BIN_DIR/git-reword" "$BIN_DIR/$alias"
     echo "  Linked $BIN_DIR/$alias → git-reword"
 done
@@ -54,6 +54,24 @@ add_to_path() {
         echo "  Added \$HOME/bin to PATH in $rc_file"
     fi
 }
+
+# Provider setup wizard
+echo ""
+echo "Set a global default AI provider (enables 'git rw' and 'git rb' without flags):"
+echo "  1) claude  (requires ANTHROPIC_API_KEY)"
+echo "  2) openai  (requires OPENAI_API_KEY)"
+echo "  3) ollama  (local, no API key needed)"
+echo "  4) skip"
+read -r -p "Choice [1-4]: " choice
+case "$choice" in
+    1) git config --global reword.provider claude
+       echo "  Set reword.provider = claude globally" ;;
+    2) git config --global reword.provider openai
+       echo "  Set reword.provider = openai globally" ;;
+    3) git config --global reword.provider ollama
+       echo "  Set reword.provider = ollama globally" ;;
+    *) echo "  Skipped. Run: git config --global reword.provider claude|openai|ollama" ;;
+esac
 
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     add_to_path "$HOME/.zprofile"
@@ -76,10 +94,14 @@ echo "    git reword --auto --openai          auto-generate via OpenAI"
 echo "    git reword --auto --ollama          auto-generate via Ollama"
 echo "    git reword HEAD~5 --auto --claude   auto mode on explicit range"
 echo ""
+echo "  Checkpoint reword (reword only checkpoint commits):"
+echo "    git rw ck                           reword checkpoint commits interactively"
+echo "    git rw ck --claude                  reword checkpoint commits via AI"
+echo ""
 echo "  Branch rename:"
 echo "    git reword --branch --claude        generate and rename current branch via Claude"
-echo "    git rw -b --openai                  short form"
-echo "    git rw -b --claude --prefix feature force a branch prefix"
+echo "    git rb                              short alias"
+echo "    git rb --prefix feature             force a branch prefix"
 echo ""
 echo "  Checkpoint (commit staged changes with sequential message):"
 echo "    git reword checkpoint               commit staged as Checkpoint #N"
