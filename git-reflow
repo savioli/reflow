@@ -1,36 +1,46 @@
 #!/usr/bin/env python3
-"""git-reword — reword commit messages interactively or via AI.
+"""git-reflow — reword commit messages interactively or via AI.
 
 Subcommands:
   checkpoint            commit staged changes as Checkpoint #N (continues enumeration)
+  squash                squash all checkpoint commits into one AI-generated commit
 
 Examples:
   Interactive (branch commits only by default):
-    git reword                          reword branch commits interactively
-    git reword HEAD~5                   reword last 5 commits interactively
+    git reflow                            reword branch commits interactively
+    git reflow HEAD~5                     reword last 5 commits interactively
 
-  Auto mode (requires a provider flag or reword.provider git config):
-    git reword --auto --claude          auto-generate via Claude
-    git reword --auto --openai          auto-generate via OpenAI
-    git reword --auto --ollama          auto-generate via Ollama
-    git reword HEAD~5 --auto --claude   auto mode on explicit range
+  Auto mode (requires a provider flag or reflow.provider git config):
+    git reflow --auto --claude            auto-generate via Claude
+    git reflow --auto --openai            auto-generate via OpenAI
+    git reflow --auto --ollama            auto-generate via Ollama
+    git reflow HEAD~5 --auto --claude     auto mode on explicit range
 
   Checkpoint reword (reword only checkpoint commits):
     git rw ck                           reword checkpoint commits interactively
     git rw ck --claude                  reword checkpoint commits via AI
 
+  Squash checkpoints into one commit:
+    git reflow squash --claude            squash all checkpoints into one AI-named commit
+    git sq                              short alias
+
   Branch rename:
-    git reword --branch --claude        generate and rename current branch via Claude
+    git reflow --branch --claude          generate and rename current branch via Claude
     git rb                              short alias
     git rb --prefix feature             force a branch prefix
 
+  Amend last commit message:
+    git reflow --amend --claude           AI rewrite last commit via amend
+    git ra                              short alias
+
   Checkpoint:
-    git reword checkpoint               commit staged changes as Checkpoint #N
+    git reflow checkpoint                 commit staged changes as Checkpoint #N
     git ck                              short alias
 
   Flags:
     --auto                              auto-generate messages via AI
     --branch / -b                       generate and rename current branch
+    --amend / -a                        AI rewrite last commit message via amend
     --prefix PREFIX                     prefix for branch name (e.g. feature, fix, chore)
     -v / -vvv                           verbosity (AI output / + prompts)
 
@@ -45,15 +55,15 @@ Examples:
     --ollama-model MODEL                Ollama model name
 
 Git config (per-repo defaults):
-  reword.provider           claude | openai | ollama
-  reword.claudeModel        model name for Claude
-  reword.openaiModel        model name for OpenAI
-  reword.ollamaModel        model name for Ollama
-  reword.ollamaUrl          Ollama base URL (default: http://localhost:11434)
-  reword.contextLines       diff context lines for commit rewording (default: 3)
-  reword.branchContextLines diff context lines for branch naming (default: 3)
-  reword.branchPrefix       default prefix for generated branch names
-  reword.prompt             custom prompt template (must include {diff})
+  reflow.provider           claude | openai | ollama
+  reflow.claudeModel        model name for Claude
+  reflow.openaiModel        model name for OpenAI
+  reflow.ollamaModel        model name for Ollama
+  reflow.ollamaUrl          Ollama base URL (default: http://localhost:11434)
+  reflow.contextLines       diff context lines for commit rewording (default: 3)
+  reflow.branchContextLines diff context lines for branch naming (default: 3)
+  reflow.branchPrefix       default prefix for generated branch names
+  reflow.prompt             custom prompt template (must include {diff})
 
 API keys (env vars):
   ANTHROPIC_API_KEY         required for --claude
@@ -116,6 +126,8 @@ class Config:
     branch_context_lines: int = 3
     branch_prefix: str = ""
     checkpoint_auto_stage: bool = True
+    squash: bool = False
+    amend: bool = False
     prompt_template: Optional[str] = None
     anthropic_api_key: str = ""
 
@@ -127,7 +139,7 @@ class GitConfigLoader:
         cfg = {}
         for key in self._KEYS:
             result = subprocess.run(
-                ["git", "config", "--get", f"reword.{key}"],
+                ["git", "config", "--get", f"reflow.{key}"],
                 capture_output=True, text=True,
             )
             if result.returncode == 0:
@@ -148,8 +160,12 @@ class CLIParser:
         if checkpoint:
             argv = argv[1:]
 
+        squash = bool(argv) and argv[0] == "squash"
+        if squash:
+            argv = argv[1:]
+
         parser = argparse.ArgumentParser(
-            prog="git reword",
+            prog="git reflow",
             description=__doc__,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
@@ -162,11 +178,13 @@ class CLIParser:
         parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires OPENAI_API_KEY)")
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
+        parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
         parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name (e.g. feature, fix, chore)")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
         args = parser.parse_args(argv)
         args.checkpoint = checkpoint
         args.checkpoint_reword = checkpoint_reword
+        args.squash = squash
         return args
 
 
@@ -207,6 +225,8 @@ class ConfigFactory:
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
             checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
+            squash=args.squash,
+            amend=args.amend,
             prompt_template=git_cfg.get("prompt"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
@@ -332,6 +352,12 @@ class GitClient:
         return [h for h in self.get_hashes(since)
                 if pattern.match(self.get_original_message(h))]
 
+    def get_combined_diff(self, hashes: list[str], context_lines: int) -> str:
+        return "".join(self.get_diff(h, context_lines) for h in hashes)
+
+    def amend(self, message: str) -> None:
+        subprocess.run(["git", "commit", "--amend", "-m", message], check=True)
+
     def stage_all(self) -> None:
         subprocess.run(["git", "add", "-A"], check=True)
 
@@ -350,14 +376,39 @@ class GitClient:
         return result.stdout.strip()
 
     def rebase(self, since: str, messages: list[str], messages_file: Path,
-               hashes_to_reword: Optional[set[str]] = None) -> None:
+               hashes_to_reword: Optional[set[str]] = None,
+               squash_hashes: Optional[set[str]] = None) -> None:
         messages_file.write_text("\n".join(messages) + "\n")
 
         counter_file = Path(tempfile.mktemp())
         counter_file.write_text("0")
 
         seq_editor = Path(tempfile.mktemp(suffix=".py"))
-        if hashes_to_reword is not None:
+        if squash_hashes is not None:
+            seq_editor.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                f"cp_hashes = {repr(squash_hashes)}\n"
+                "p = sys.argv[1]\n"
+                "lines = open(p).read().splitlines()\n"
+                "cp_lines, other_lines = [], []\n"
+                "for line in lines:\n"
+                "    parts = line.split(None, 2)\n"
+                "    if parts and parts[0] == 'pick' and len(parts) >= 2 and parts[1][:7] in cp_hashes:\n"
+                "        cp_lines.append(line)\n"
+                "    else:\n"
+                "        other_lines.append(line)\n"
+                "result = []\n"
+                "for i, line in enumerate(cp_lines):\n"
+                "    parts = line.split(None, 2)\n"
+                "    if i == 0:\n"
+                "        result.append('reword ' + ' '.join(parts[1:]))\n"
+                "    else:\n"
+                "        result.append('fixup ' + ' '.join(parts[1:]))\n"
+                "result.extend(other_lines)\n"
+                "open(p, 'w').write('\\n'.join(result) + '\\n')\n"
+            )
+        elif hashes_to_reword is not None:
             seq_editor.write_text(
                 "#!/usr/bin/env python3\n"
                 "import sys\n"
@@ -442,7 +493,7 @@ class PromptBuilder:
 
     def build(self, diff: str, template: Optional[str] = None) -> str:
         if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
-            print("Warning: reword.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+            print("Warning: reflow.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
             self._warned_diff = True
         return (template or self._DEFAULT).replace("{diff}", diff)
 
@@ -640,7 +691,7 @@ class ProviderFactory:
             return provider
         if config.use_claude:
             return ClaudeProvider(config.anthropic_api_key, config.claude_model)
-        print("Error: no provider selected. Use --claude, --openai, or --ollama (or set reword.* git config).", file=sys.stderr)
+        print("Error: no provider selected. Use --claude, --openai, or --ollama (or set reflow.* git config).", file=sys.stderr)
         sys.exit(1)
 
 
@@ -813,6 +864,11 @@ def main() -> None:
         sys.argv.insert(1, "checkpoint")
     elif invoked_as == "git-rb":
         sys.argv.insert(1, "--branch")
+    elif invoked_as == "git-sq":
+        sys.argv.insert(1, "squash")
+    elif invoked_as == "git-ra":
+        sys.argv.insert(1, "--amend")
+    # git-fx and git-rw are pass-through aliases for git-reflow / git-reword
 
     args = CLIParser().parse()
     git = GitClient()
@@ -829,6 +885,50 @@ def main() -> None:
         msg = CheckpointGenerator().next_message()
         print(f"Committing as: {msg}")
         git.commit(msg)
+        return
+
+    if config.squash:
+        since = git.resolve_since(config.since)
+        checkpoint_hashes = git.get_checkpoint_hashes(since)
+        if not checkpoint_hashes:
+            print("No checkpoint commits found on this branch.")
+            sys.exit(0)
+        print(f"Squashing {len(checkpoint_hashes)} checkpoint commit(s)...")
+        provider = ProviderFactory().create(config)
+        combined_diff = git.get_combined_diff(checkpoint_hashes, config.context_lines)
+        msg = MessageGenerator(provider, PromptBuilder(), config).generate("squash", combined_diff)
+        if not msg:
+            print("Error: could not generate commit message.", file=sys.stderr)
+            sys.exit(1)
+        print(f"  Message: {msg}")
+        confirm = input("Squash checkpoints? [Y/n] ").strip().lower()
+        if confirm == "n":
+            print("Aborted.")
+            return
+        squash_hashes = set(h[:7] for h in checkpoint_hashes)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            messages_file = Path(f.name)
+        try:
+            git.rebase(since, [msg], messages_file, squash_hashes=squash_hashes)
+            print(f"Done. {len(checkpoint_hashes)} checkpoint(s) squashed into: {msg}")
+        finally:
+            messages_file.unlink(missing_ok=True)
+        return
+
+    if config.amend:
+        current_msg = git.get_original_message("HEAD")
+        diff = git.get_diff("HEAD", config.context_lines)
+        provider = ProviderFactory().create(config)
+        new_msg = MessageGenerator(provider, PromptBuilder(), config).generate("HEAD", diff)
+        if not new_msg:
+            print("Error: could not generate commit message.", file=sys.stderr)
+            sys.exit(1)
+        print(f"  Current:  {current_msg}")
+        print(f"  Proposed: {new_msg}")
+        confirm = input("Amend? [Y/n] ").strip().lower()
+        if confirm != "n":
+            git.amend(new_msg)
+            print(f"Amended: {new_msg}")
         return
 
     if config.branch:

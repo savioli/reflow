@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/bin"
 
-echo "Installing git-reword..."
+echo "Installing git-reflow..."
 
 # Check Python 3
 if ! command -v python3 &> /dev/null; then
@@ -34,14 +34,14 @@ fi
 mkdir -p "$BIN_DIR"
 
 # Copy and make executable
-cp "$SCRIPT_DIR/git-reword" "$BIN_DIR/git-reword"
-chmod +x "$BIN_DIR/git-reword"
-echo "  Installed to $BIN_DIR/git-reword"
+cp "$SCRIPT_DIR/git-reflow" "$BIN_DIR/git-reflow"
+chmod +x "$BIN_DIR/git-reflow"
+echo "  Installed to $BIN_DIR/git-reflow"
 
 # Short aliases as symlinks
-for alias in git-rw git-ck git-rb; do
-    ln -sf "$BIN_DIR/git-reword" "$BIN_DIR/$alias"
-    echo "  Linked $BIN_DIR/$alias → git-reword"
+for alias in git-rf git-rw git-ck git-rb git-sq git-ra; do
+    ln -sf "$BIN_DIR/git-reflow" "$BIN_DIR/$alias"
+    echo "  Linked $BIN_DIR/$alias → git-reflow"
 done
 
 # Add ~/bin to PATH if not already there
@@ -55,23 +55,6 @@ add_to_path() {
     fi
 }
 
-# Provider setup wizard
-echo ""
-echo "Set a global default AI provider (enables 'git rw' and 'git rb' without flags):"
-echo "  1) claude  (requires ANTHROPIC_API_KEY)"
-echo "  2) openai  (requires OPENAI_API_KEY)"
-echo "  3) ollama  (local, no API key needed)"
-echo "  4) skip"
-read -r -p "Choice [1-4]: " choice
-case "$choice" in
-    1) git config --global reword.provider claude
-       echo "  Set reword.provider = claude globally" ;;
-    2) git config --global reword.provider openai
-       echo "  Set reword.provider = openai globally" ;;
-    3) git config --global reword.provider ollama
-       echo "  Set reword.provider = ollama globally" ;;
-    *) echo "  Skipped. Run: git config --global reword.provider claude|openai|ollama" ;;
-esac
 
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     add_to_path "$HOME/.zprofile"
@@ -85,31 +68,40 @@ echo ""
 echo "Installation complete. Usage:"
 echo ""
 echo "  Interactive (branch commits only by default):"
-echo "    git reword                          reword branch commits interactively"
-echo "    git reword HEAD~5                   reword last 5 commits interactively"
+echo "    git reflow                            reword branch commits interactively"
+echo "    git reflow HEAD~5                     reword last 5 commits interactively"
 echo ""
-echo "  Auto mode (requires a provider flag or reword.provider git config):"
-echo "    git reword --auto --claude          auto-generate via Claude"
-echo "    git reword --auto --openai          auto-generate via OpenAI"
-echo "    git reword --auto --ollama          auto-generate via Ollama"
-echo "    git reword HEAD~5 --auto --claude   auto mode on explicit range"
+echo "  Auto mode (requires a provider flag or reflow.provider git config):"
+echo "    git reflow --auto --claude            auto-generate via Claude"
+echo "    git reflow --auto --openai            auto-generate via OpenAI"
+echo "    git reflow --auto --ollama            auto-generate via Ollama"
+echo "    git reflow HEAD~5 --auto --claude     auto mode on explicit range"
 echo ""
 echo "  Checkpoint reword (reword only checkpoint commits):"
 echo "    git rw ck                           reword checkpoint commits interactively"
 echo "    git rw ck --claude                  reword checkpoint commits via AI"
 echo ""
+echo "  Squash checkpoints into one commit:"
+echo "    git reflow squash --claude            squash all checkpoints into one AI-named commit"
+echo "    git sq                              short alias"
+echo ""
+echo "  Amend last commit message:"
+echo "    git reflow --amend --claude           AI rewrite last commit via amend"
+echo "    git ra                              short alias"
+echo ""
 echo "  Branch rename:"
-echo "    git reword --branch --claude        generate and rename current branch via Claude"
+echo "    git reflow --branch --claude          generate and rename current branch via Claude"
 echo "    git rb                              short alias"
 echo "    git rb --prefix feature             force a branch prefix"
 echo ""
 echo "  Checkpoint (commit staged changes with sequential message):"
-echo "    git reword checkpoint               commit staged as Checkpoint #N"
+echo "    git reflow checkpoint                 commit staged as Checkpoint #N"
 echo "    git ck                              short alias"
 echo ""
 echo "  Flags:"
 echo "    --auto                              auto-generate messages via AI"
 echo "    --branch / -b                       generate and rename current branch"
+echo "    --amend / -a                        AI rewrite last commit message via amend"
 echo "    --prefix PREFIX                     prefix for branch name (e.g. feature, fix, chore)"
 echo "    -v / -vvv                           verbosity (AI output / + prompts)"
 echo ""
@@ -119,16 +111,16 @@ echo "    --openai-model MODEL                OpenAI model name"
 echo "    --ollama-model MODEL                Ollama model name"
 echo ""
 echo "  Git config (per-repo defaults):"
-echo "    git config reword.provider claude|openai|ollama"
-echo "    git config reword.claudeModel claude-haiku-4-5-20251001"
-echo "    git config reword.openaiModel gpt-4o-mini"
-echo "    git config reword.ollamaModel llama3.2"
-echo "    git config reword.ollamaUrl http://localhost:11434"
-echo "    git config reword.contextLines 10"
-echo "    git config reword.branchContextLines 3"
-echo "    git config reword.branchPrefix feature"
-echo "    git config reword.checkpointAutoStage false"
-echo "    git config reword.prompt \"Your prompt with {diff}\""
+echo "    git config reflow.provider claude|openai|ollama"
+echo "    git config reflow.claudeModel claude-haiku-4-5-20251001"
+echo "    git config reflow.openaiModel gpt-4o-mini"
+echo "    git config reflow.ollamaModel llama3.2"
+echo "    git config reflow.ollamaUrl http://localhost:11434"
+echo "    git config reflow.contextLines 10"
+echo "    git config reflow.branchContextLines 3"
+echo "    git config reflow.branchPrefix feature"
+echo "    git config reflow.checkpointAutoStage false"
+echo "    git config reflow.prompt \"Your prompt with {diff}\""
 echo ""
 echo "  API keys (env vars):"
 echo "    export ANTHROPIC_API_KEY=sk-ant-...  (for --claude)"

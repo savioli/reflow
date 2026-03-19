@@ -1,30 +1,30 @@
-# git-reword
+# git-reflow
 
 A git subcommand to reword commit messages interactively or automatically via the Claude API.
 
 ## Installation
 
 ```bash
-cd git-reword
+cd git-reflow
 ./install.sh
 ```
 
-This copies `git-reword` to `~/bin/` and ensures `~/bin` is in your `$PATH`.
+This copies `git-reflow` to `~/bin/` and ensures `~/bin` is in your `$PATH`.
 
 ## Usage
 
 ```bash
 # Reword all commits interactively (prompts for each one)
-git reword
+git reflow
 
 # Reword the last 5 commits interactively
-git reword HEAD~5
+git reflow HEAD~5
 
 # Auto-generate all messages using Claude API
-git reword --auto
+git reflow --auto
 
 # Auto-generate messages for the last 5 commits
-git reword HEAD~5 --auto
+git reflow HEAD~5 --auto
 ```
 
 ## Modes
@@ -52,7 +52,7 @@ Requires `ANTHROPIC_API_KEY` and `curl` to be available.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-git reword --auto
+git reflow --auto
 ```
 
 Also requires `jq` for JSON handling:
