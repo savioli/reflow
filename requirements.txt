@@ -1,3 +1,4 @@
 anthropic
 openai
 ollama
+tomli; python_version < "3.11"

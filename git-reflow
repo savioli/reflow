@@ -66,6 +66,10 @@ Git config (per-repo defaults):
   reflow.commitPrompt       custom commit prompt template (must include {diff})
   reflow.branchPrompt       custom branch prompt template (must include {diff})
 
+.reflow file (repo root, takes precedence over git config):
+  commitPrompt = """..."""   custom commit prompt (must include {diff})
+  branchPrompt = """..."""   custom branch prompt (must include {diff})
+
 API keys (env vars):
   ANTHROPIC_API_KEY         required for --claude
   OPENAI_API_KEY            required for --openai
@@ -83,6 +87,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ImportError:
+        tomllib = None  # type: ignore[assignment]
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -149,6 +161,24 @@ class GitConfigLoader:
         return cfg
 
 
+class ReflowFileLoader:
+    def load(self) -> dict[str, str]:
+        if tomllib is None:
+            return {}
+        root = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+        if root.returncode != 0:
+            return {}
+        path = Path(root.stdout.strip()) / ".reflow"
+        if not path.exists():
+            return {}
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return {k: v for k, v in data.items() if k in ("commitPrompt", "branchPrompt")}
+
+
 class CLIParser:
     def parse(self, argv: Optional[list[str]] = None) -> argparse.Namespace:
         if argv is None:
@@ -191,11 +221,13 @@ class CLIParser:
 
 
 class ConfigFactory:
-    def __init__(self, loader: GitConfigLoader):
+    def __init__(self, loader: GitConfigLoader, file_loader: ReflowFileLoader):
         self._loader = loader
+        self._file_loader = file_loader
 
     def from_args(self, args: argparse.Namespace) -> Config:
         git_cfg = self._loader.load()
+        file_cfg = self._file_loader.load()
         default_provider = git_cfg.get("provider", "")
 
         use_ollama = args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
@@ -229,8 +261,8 @@ class ConfigFactory:
             checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
             squash=args.squash,
             amend=args.amend,
-            prompt_template=git_cfg.get("commitPrompt"),
-            branch_prompt_template=git_cfg.get("branchPrompt"),
+            prompt_template=file_cfg.get("commitPrompt") or git_cfg.get("commitPrompt"),
+            branch_prompt_template=file_cfg.get("branchPrompt") or git_cfg.get("branchPrompt"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
 
@@ -880,7 +912,7 @@ def main() -> None:
     git = GitClient()
     git.assert_in_repo()
 
-    config = ConfigFactory(GitConfigLoader()).from_args(args)
+    config = ConfigFactory(GitConfigLoader(), ReflowFileLoader()).from_args(args)
 
     if config.checkpoint:
         if config.checkpoint_auto_stage:

@@ -1,0 +1,26 @@
+commitPrompt = """
+Generate a git commit message for the diff below.
+
+Rules (follow strictly):
+1. Start with an imperative verb: Add, Fix, Update, Remove, Refactor, etc.
+2. Maximum 5 words total
+3. Describe the intent or effect, not the mechanism
+4. No filenames, variable names, or code tokens
+5. No punctuation at the end
+
+Diff:
+{diff}
+"""
+
+branchPrompt = """
+Generate a git branch name for the following diff.
+
+Rules (follow strictly):
+1. kebab-case: lowercase letters, numbers, and hyphens only
+2. 2 to 5 words
+3. Describes the purpose of the changes
+4. No special characters except hyphens
+
+Diff:
+{diff}
+"""
