@@ -63,7 +63,8 @@ Git config (per-repo defaults):
   reflow.contextLines       diff context lines for commit rewording (default: 3)
   reflow.branchContextLines diff context lines for branch naming (default: 3)
   reflow.branchPrefix       default prefix for generated branch names
-  reflow.prompt             custom prompt template (must include {diff})
+  reflow.commitPrompt       custom commit prompt template (must include {diff})
+  reflow.branchPrompt       custom branch prompt template (must include {diff})
 
 API keys (env vars):
   ANTHROPIC_API_KEY         required for --claude
@@ -129,11 +130,12 @@ class Config:
     squash: bool = False
     amend: bool = False
     prompt_template: Optional[str] = None
+    branch_prompt_template: Optional[str] = None
     anthropic_api_key: str = ""
 
 
 class GitConfigLoader:
-    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "prompt", "contextLines", "branchContextLines", "branchPrefix", "checkpointAutoStage"]
+    _KEYS = ["provider", "claudeModel", "ollamaModel", "ollamaUrl", "openaiModel", "openaiUrl", "commitPrompt", "branchPrompt", "contextLines", "branchContextLines", "branchPrefix", "checkpointAutoStage"]
 
     def load(self) -> dict[str, str]:
         cfg = {}
@@ -227,7 +229,8 @@ class ConfigFactory:
             checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
             squash=args.squash,
             amend=args.amend,
-            prompt_template=git_cfg.get("prompt"),
+            prompt_template=git_cfg.get("commitPrompt"),
+            branch_prompt_template=git_cfg.get("branchPrompt"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
 
@@ -493,12 +496,15 @@ class PromptBuilder:
 
     def build(self, diff: str, template: Optional[str] = None) -> str:
         if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
-            print("Warning: reflow.prompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+            print("Warning: reflow.commitPrompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
             self._warned_diff = True
         return (template or self._DEFAULT).replace("{diff}", diff)
 
-    def build_branch(self, diff: str) -> str:
-        return self._BRANCH.replace("{diff}", diff)
+    def build_branch(self, diff: str, template: Optional[str] = None) -> str:
+        if template and "{diff}" not in template and not getattr(self, "_warned_branch_diff", False):
+            print("Warning: reflow.branchPrompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+            self._warned_branch_diff = True
+        return (template or self._BRANCH).replace("{diff}", diff)
 
 
 # ── AI providers ───────────────────────────────────────────────────────────────
@@ -751,7 +757,7 @@ class BranchNameGenerator:
 
     def generate(self, since: str) -> Optional[str]:
         diff = self._git.get_range_diff(since, self._config.branch_context_lines)
-        prompt = self._prompt_builder.build_branch(diff)
+        prompt = self._prompt_builder.build_branch(diff, self._config.branch_prompt_template)
         if self._config.verbosity >= 3:
             print(f"  [branch-prompt:system]: {self._provider.branch_system}", file=sys.stderr)
             print(f"  [branch-prompt:user]:\n{prompt}", file=sys.stderr)
