@@ -12,27 +12,12 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-install_pkg() {
-    pip3 install --quiet --user "$1" 2>/dev/null || pip3 install --quiet --break-system-packages "$1"
+install_reqs() {
+    pip3 install --quiet --user -r "$1" 2>/dev/null || pip3 install --quiet --break-system-packages -r "$1"
 }
 
-# Install required packages if missing
-if ! python3 -c "import anthropic" &> /dev/null; then
-    echo "  Installing anthropic..."
-    install_pkg anthropic
-fi
-if ! python3 -c "import openai" &> /dev/null; then
-    echo "  Installing openai..."
-    install_pkg openai
-fi
-if ! python3 -c "import ollama" &> /dev/null; then
-    echo "  Installing ollama..."
-    install_pkg ollama
-fi
-if ! command -v ruff &> /dev/null; then
-    echo "  Installing ruff..."
-    install_pkg ruff
-fi
+echo "  Installing dependencies..."
+install_reqs "$SCRIPT_DIR/requirements.txt"
 
 # Create ~/bin if it doesn't exist
 mkdir -p "$BIN_DIR"
