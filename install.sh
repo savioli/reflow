@@ -29,6 +29,10 @@ if ! python3 -c "import ollama" &> /dev/null; then
     echo "  Installing ollama..."
     install_pkg ollama
 fi
+if ! command -v ruff &> /dev/null; then
+    echo "  Installing ruff..."
+    install_pkg ruff
+fi
 
 # Create ~/bin if it doesn't exist
 mkdir -p "$BIN_DIR"
