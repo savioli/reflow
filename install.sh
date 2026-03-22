@@ -2,7 +2,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BIN_DIR="$HOME/bin"
 
 echo "Installing git-reflow..."
 
@@ -12,45 +11,27 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-install_reqs() {
-    pip3 install --quiet --user -r "$1" 2>/dev/null || pip3 install --quiet --break-system-packages -r "$1"
-}
+# Install package (entry points are created automatically)
+pip3 install --quiet --user "$SCRIPT_DIR" 2>/dev/null || \
+    pip3 install --quiet --break-system-packages "$SCRIPT_DIR"
 
-echo "  Installing dependencies..."
-install_reqs "$SCRIPT_DIR/requirements.txt"
-
-# Create ~/bin if it doesn't exist
-mkdir -p "$BIN_DIR"
-
-# Copy and make executable
-cp "$SCRIPT_DIR/git-reflow" "$BIN_DIR/git-reflow"
-chmod +x "$BIN_DIR/git-reflow"
-echo "  Installed to $BIN_DIR/git-reflow"
-
-# Short aliases as symlinks
-for alias in git-rf git-rw git-ck git-rb git-sq git-ra; do
-    ln -sf "$BIN_DIR/git-reflow" "$BIN_DIR/$alias"
-    echo "  Linked $BIN_DIR/$alias → git-reflow"
-done
-
-# Add ~/bin to PATH if not already there
-add_to_path() {
-    local rc_file="$1"
-    if [ -f "$rc_file" ] && ! grep -q 'export PATH="$HOME/bin' "$rc_file"; then
-        echo '' >> "$rc_file"
-        echo '# git extensions' >> "$rc_file"
-        echo 'export PATH="$HOME/bin:$PATH"' >> "$rc_file"
-        echo "  Added \$HOME/bin to PATH in $rc_file"
-    fi
-}
-
-
-if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+# Add pip user scripts dir to PATH if needed
+SCRIPTS_DIR="$(python3 -m site --user-scripts 2>/dev/null || echo "$HOME/.local/bin")"
+if [[ ":$PATH:" != *":$SCRIPTS_DIR:"* ]]; then
+    add_to_path() {
+        local rc_file="$1"
+        if [ -f "$rc_file" ] && ! grep -q "$SCRIPTS_DIR" "$rc_file"; then
+            echo '' >> "$rc_file"
+            echo '# git extensions' >> "$rc_file"
+            echo "export PATH=\"$SCRIPTS_DIR:\$PATH\"" >> "$rc_file"
+            echo "  Added $SCRIPTS_DIR to PATH in $rc_file"
+        fi
+    }
     add_to_path "$HOME/.zprofile"
     add_to_path "$HOME/.zshrc"
     add_to_path "$HOME/.bashrc"
-    export PATH="$BIN_DIR:$PATH"
-    echo "  Note: restart your shell (or run: export PATH=\"\$HOME/bin:\$PATH\")"
+    export PATH="$SCRIPTS_DIR:$PATH"
+    echo "  Note: restart your shell (or run: export PATH=\"$SCRIPTS_DIR:\$PATH\")"
 fi
 
 echo ""
@@ -67,37 +48,37 @@ echo "    git reflow --auto --ollama            auto-generate via Ollama"
 echo "    git reflow HEAD~5 --auto --claude     auto mode on explicit range"
 echo ""
 echo "  Checkpoint reword (reword only checkpoint commits):"
-echo "    git rw ck                           reword checkpoint commits interactively"
-echo "    git rw ck --claude                  reword checkpoint commits via AI"
+echo "    git rw ck                             reword checkpoint commits interactively"
+echo "    git rw ck --claude                    reword checkpoint commits via AI"
 echo ""
 echo "  Squash checkpoints into one commit:"
 echo "    git reflow squash --claude            squash all checkpoints into one AI-named commit"
-echo "    git sq                              short alias"
+echo "    git sq                                short alias"
 echo ""
 echo "  Amend last commit message:"
 echo "    git reflow --amend --claude           AI rewrite last commit via amend"
-echo "    git ra                              short alias"
+echo "    git ra                                short alias"
 echo ""
 echo "  Branch rename:"
 echo "    git reflow --branch --claude          generate and rename current branch via Claude"
-echo "    git rb                              short alias"
-echo "    git rb --prefix feature             force a branch prefix"
+echo "    git rb                                short alias"
+echo "    git rb --prefix feature               force a branch prefix"
 echo ""
 echo "  Checkpoint (commit staged changes with sequential message):"
 echo "    git reflow checkpoint                 commit staged as Checkpoint #N"
-echo "    git ck                              short alias"
+echo "    git ck                                short alias"
 echo ""
 echo "  Flags:"
-echo "    --auto                              auto-generate messages via AI"
-echo "    --branch / -b                       generate and rename current branch"
-echo "    --amend / -a                        AI rewrite last commit message via amend"
-echo "    --prefix PREFIX                     prefix for branch name (e.g. feature, fix, chore)"
-echo "    -v / -vvv                           verbosity (AI output / + prompts)"
+echo "    --auto                                auto-generate messages via AI"
+echo "    --branch / -b                         generate and rename current branch"
+echo "    --amend / -a                          AI rewrite last commit message via amend"
+echo "    --prefix PREFIX                       prefix for branch name (e.g. feature, fix, chore)"
+echo "    -v / -vvv                             verbosity (AI output / + prompts)"
 echo ""
 echo "  Provider model overrides:"
-echo "    --claude-model MODEL                Claude model name"
-echo "    --openai-model MODEL                OpenAI model name"
-echo "    --ollama-model MODEL                Ollama model name"
+echo "    --claude-model MODEL                  Claude model name"
+echo "    --openai-model MODEL                  OpenAI model name"
+echo "    --ollama-model MODEL                  Ollama model name"
 echo ""
 echo "  Git config (per-repo defaults):"
 echo "    git config reflow.provider claude|openai|ollama"
