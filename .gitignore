@@ -1,3 +1,9 @@
 .reflow
 CLAUDE.md
 plans/
+venv/
+*.egg-info/
+__pycache__/
+*.pyc
+dist/
+build/

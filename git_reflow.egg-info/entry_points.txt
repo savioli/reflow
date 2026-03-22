@@ -1,8 +1,0 @@
-[console_scripts]
-git-ck = reflow.main:main
-git-ra = reflow.main:main
-git-rb = reflow.main:main
-git-reflow = reflow.main:main
-git-rf = reflow.main:main
-git-rw = reflow.main:main
-git-sq = reflow.main:main
