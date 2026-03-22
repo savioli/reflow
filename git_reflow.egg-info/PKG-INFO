@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: git-reflow
+Version: 0.1.0
+Requires-Python: >=3.9
+Requires-Dist: anthropic
+Requires-Dist: openai
+Requires-Dist: ollama
+Requires-Dist: tomli; python_version < "3.11"
