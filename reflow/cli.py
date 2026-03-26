@@ -29,11 +29,11 @@ class CLIParser:
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5); defaults to branch commits only")
-        parser.add_argument("--claude", action="store_true", help="Use Claude (requires ANTHROPIC_API_KEY)")
+        parser.add_argument("--claude", action="store_true", help="Use Claude (requires REFLOW_ANTHROPIC_API_KEY)")
         parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
-        parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires OPENAI_API_KEY)")
+        parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires REFLOW_OPENAI_API_KEY)")
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
         parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
@@ -78,7 +78,7 @@ class ConfigFactory:
             use_openai=use_openai,
             openai_model=args.openai_model or git_cfg.get("openaiModel", "gpt-4o-mini"),
             openai_url=git_cfg.get("openaiUrl") or None,
-            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            openai_api_key=os.environ.get("REFLOW_OPENAI_API_KEY", ""),
             context_lines=int(git_cfg.get("contextLines", 3)),
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
@@ -87,5 +87,5 @@ class ConfigFactory:
             amend=args.amend,
             prompt_template=file_cfg.get("commitPrompt") or git_cfg.get("commitPrompt"),
             branch_prompt_template=file_cfg.get("branchPrompt") or git_cfg.get("branchPrompt"),
-            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+            anthropic_api_key=os.environ.get("REFLOW_ANTHROPIC_API_KEY", ""),
         )
