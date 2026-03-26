@@ -20,7 +20,7 @@ class OpenAIProvider(AIProvider):
 
     def __init__(self, api_key: str, model: str, base_url: Optional[str] = None):
         if not api_key:
-            print("error: REFLOW_OPENAI_API_KEY is not set", file=sys.stderr)
+            print("error: GIT_REFLOW_OPENAI_API_KEY is not set", file=sys.stderr)
             sys.exit(1)
         try:
             import openai as _openai
