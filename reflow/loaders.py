@@ -15,7 +15,7 @@ class GitConfigLoader:
     _KEYS = [
         "provider", "claudeModel", "ollamaModel", "ollamaUrl",
         "openaiModel", "openaiUrl", "commitPrompt", "branchPrompt",
-        "contextLines", "branchContextLines", "branchPrefix", "checkpointAutoStage",
+        "contextLines", "branchContextLines", "branchPrefix", "autoAccept", "checkpointAutoStage",
     ]
 
     def load(self) -> dict[str, str]:

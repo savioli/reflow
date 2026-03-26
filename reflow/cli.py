@@ -82,6 +82,7 @@ class ConfigFactory:
             context_lines=int(git_cfg.get("contextLines", 3)),
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
+            auto_accept=git_cfg.get("autoAccept", "true").lower() != "false",
             checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
             squash=args.squash,
             amend=args.amend,

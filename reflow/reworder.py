@@ -51,10 +51,11 @@ class Reworder:
             print(f"  {commit_hash[:7]}  {msg}")
         print()
 
-        confirm = input("Apply these messages? [Y/n] ").strip().lower()
-        if confirm == "n":
-            print("Aborted.")
-            return
+        if not self._config.auto_accept:
+            confirm = input("Apply these messages? [Y/n] ").strip().lower()
+            if confirm == "n":
+                print("Aborted.")
+                return
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             messages_file = Path(f.name)

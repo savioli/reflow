@@ -60,10 +60,11 @@ def main() -> None:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
         print(f"  Message: {msg}")
-        confirm = input("Squash checkpoints? [Y/n] ").strip().lower()
-        if confirm == "n":
-            print("Aborted.")
-            return
+        if not config.auto_accept:
+            confirm = input("Squash checkpoints? [Y/n] ").strip().lower()
+            if confirm == "n":
+                print("Aborted.")
+                return
         squash_hashes = set(h[:7] for h in checkpoint_hashes)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             messages_file = Path(f.name)
@@ -84,10 +85,14 @@ def main() -> None:
             sys.exit(1)
         print(f"  Current:  {current_msg}")
         print(f"  Proposed: {new_msg}")
-        confirm = input("Amend? [Y/n] ").strip().lower()
-        if confirm != "n":
+        if config.auto_accept:
             git.amend(new_msg)
             print(f"Amended: {new_msg}")
+        else:
+            confirm = input("Amend? [Y/n] ").strip().lower()
+            if confirm != "n":
+                git.amend(new_msg)
+                print(f"Amended: {new_msg}")
         return
 
     if config.branch:
@@ -105,10 +110,14 @@ def main() -> None:
         full_name = f"{prefix}/{bare_name}" if prefix else bare_name
         print(f"  Current:   {current}")
         print(f"  Generated: {full_name}")
-        confirm = input("Rename branch? [Y/n] ").strip().lower()
-        if confirm != "n":
+        if config.auto_accept:
             git.rename_branch(full_name)
             print(f"Branch renamed to: {full_name}")
+        else:
+            confirm = input("Rename branch? [Y/n] ").strip().lower()
+            if confirm != "n":
+                git.rename_branch(full_name)
+                print(f"Branch renamed to: {full_name}")
         return
 
     provider = ProviderFactory().create(config)

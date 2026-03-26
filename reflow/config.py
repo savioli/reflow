@@ -21,6 +21,7 @@ class Config:
     context_lines: int = 3
     branch_context_lines: int = 3
     branch_prefix: str = ""
+    auto_accept: bool = True
     checkpoint_auto_stage: bool = True
     squash: bool = False
     amend: bool = False
