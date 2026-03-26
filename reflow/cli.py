@@ -29,11 +29,11 @@ class CLIParser:
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5); defaults to branch commits only")
-        parser.add_argument("--claude", action="store_true", help="Use Claude (requires GIT_REFLOW_ANTHROPIC_API_KEY)")
+        parser.add_argument("--claude", action="store_true", help="Use Claude")
         parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
         parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
-        parser.add_argument("--openai", action="store_true", help="Use OpenAI (requires GIT_REFLOW_OPENAI_API_KEY)")
+        parser.add_argument("--openai", action="store_true", help="Use OpenAI")
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
         parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
