@@ -29,7 +29,6 @@ class CLIParser:
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5); defaults to branch commits only")
-        parser.add_argument("--auto", action="store_true", help="Auto-generate messages via AI")
         parser.add_argument("--claude", action="store_true", help="Use Claude (requires ANTHROPIC_API_KEY)")
         parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
@@ -60,7 +59,6 @@ class ConfigFactory:
         use_ollama = args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
         use_openai = args.openai or "openaiModel" in git_cfg or default_provider == "openai"
         use_claude = args.claude or "claudeModel" in git_cfg or default_provider == "claude"
-        auto = args.auto or use_ollama or use_openai or use_claude
 
         since_raw = args.since or "--root"
         if since_raw.isdigit():
@@ -68,7 +66,6 @@ class ConfigFactory:
 
         return Config(
             since=since_raw,
-            auto=auto,
             checkpoint=args.checkpoint,
             checkpoint_reword=args.checkpoint_reword,
             branch=args.branch,

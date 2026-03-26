@@ -34,7 +34,7 @@ class Reworder:
                 return
             print(f"Rewording {len(hashes)} commit(s)...")
 
-        if self._config.auto:
+        if self._generator is not None:
             messages = self._auto_mode(hashes)
         else:
             messages = self._interactive_mode(hashes)

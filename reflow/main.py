@@ -115,7 +115,7 @@ def main() -> None:
 
     generator: Optional[MessageGenerator] = None
 
-    if config.auto:
+    if config.use_claude or config.use_openai or config.use_ollama:
         provider = ProviderFactory().create(config)
         generator = MessageGenerator(provider, PromptBuilder(), config)
 

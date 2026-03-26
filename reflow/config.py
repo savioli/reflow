@@ -5,7 +5,6 @@ from typing import Optional
 @dataclass
 class Config:
     since: str = "--root"
-    auto: bool = False
     checkpoint: bool = False
     checkpoint_reword: bool = False
     branch: bool = False
