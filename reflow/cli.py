@@ -28,7 +28,7 @@ class CLIParser:
             prog="git reflow",
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        parser.add_argument("since", nargs="?", default=None, help="Commit range base (e.g. HEAD~5); defaults to branch commits only")
+        parser.add_argument("since", nargs="?", default=None, help="Commit range base; defaults to branch commits only")
         parser.add_argument("--claude", action="store_true", help="Use Claude")
         parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
@@ -37,8 +37,8 @@ class CLIParser:
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
         parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
-        parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name (e.g. feature, fix, chore)")
-        parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity (-v AI output, -vvv also prompts)")
+        parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name")
+        parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity: -v AI output, -vv prompts")
         args = parser.parse_args(argv)
         args.checkpoint = checkpoint
         args.checkpoint_reword = checkpoint_reword

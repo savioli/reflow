@@ -17,7 +17,7 @@ class MessageGenerator:
 
     def generate(self, commit_hash: str, diff: str) -> Optional[str]:
         prompt = self._prompt_builder.build(diff, self._config.prompt_template)
-        if self._config.verbosity >= 3:
+        if self._config.verbosity >= 2:
             print(f"  [prompt:system] {commit_hash[:7]}: {self._provider.generate_system}", file=sys.stderr)
             print(f"  [prompt:user] {commit_hash[:7]}:\n{prompt}", file=sys.stderr)
         try:
@@ -60,7 +60,7 @@ class BranchNameGenerator:
     def generate(self, since: str) -> Optional[str]:
         diff = self._git.get_range_diff(since, self._config.branch_context_lines)
         prompt = self._prompt_builder.build_branch(diff, self._config.branch_prompt_template)
-        if self._config.verbosity >= 3:
+        if self._config.verbosity >= 2:
             print(f"  [branch-prompt:system]: {self._provider.branch_system}", file=sys.stderr)
             print(f"  [branch-prompt:user]:\n{prompt}", file=sys.stderr)
         try:
