@@ -8,12 +8,7 @@ from reflow.git_client import GitClient
 
 
 class Reworder:
-    def __init__(
-        self,
-        git: GitClient,
-        config: Config,
-        generator: Optional[MessageGenerator] = None,
-    ):
+    def __init__(self, git: GitClient, config: Config, generator: MessageGenerator):
         self._git = git
         self._config = config
         self._generator = generator
@@ -34,15 +29,11 @@ class Reworder:
                 return
             print(f"Rewording {len(hashes)} commit(s)...")
 
-        if self._generator is not None:
-            messages = self._auto_mode(hashes)
-        else:
-            messages = self._interactive_mode(hashes)
-
+        messages = self._generate(hashes)
         hashes_to_reword = set(h[:7] for h in hashes) if self._config.checkpoint_reword else None
         self._confirm_and_apply(since, hashes, messages, hashes_to_reword=hashes_to_reword)
 
-    def _auto_mode(self, hashes: list[str]) -> list[str]:
+    def _generate(self, hashes: list[str]) -> list[str]:
         messages = []
         count = len(hashes)
         for i, commit_hash in enumerate(hashes, 1):
@@ -50,18 +41,6 @@ class Reworder:
             diff = self._git.get_diff(commit_hash, self._config.context_lines)
             msg = self._generator.generate(commit_hash, diff) or self._git.get_original_message(commit_hash)
             messages.append(msg)
-        return messages
-
-    def _interactive_mode(self, hashes: list[str]) -> list[str]:
-        messages = []
-        for commit_hash in hashes:
-            print("\n──────────────────────────────────────────")
-            print(f"Commit: {commit_hash[:7]}")
-            print(f"Current: {self._git.get_original_message(commit_hash)}")
-            print()
-            print(self._git.get_stat(commit_hash))
-            msg = input("New message (≤5 words, blank = keep): ").strip()
-            messages.append(msg or self._git.get_original_message(commit_hash))
         return messages
 
     def _confirm_and_apply(self, since: str, hashes: list[str], messages: list[str],
