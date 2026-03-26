@@ -1,7 +1,6 @@
 import sys
 
 from reflow.config import Config
-from reflow.output import error, hint
 from reflow.providers.base import AIProvider
 from reflow.providers.claude import ClaudeProvider
 from reflow.providers.ollama import OllamaProvider
@@ -18,7 +17,7 @@ class ProviderFactory:
             return provider
         if config.use_claude:
             return ClaudeProvider(config.anthropic_api_key, config.claude_model)
-        error("no AI provider defined")
-        hint("use --claude, --openai, or --ollama")
-        hint("or set: git config reflow.provider claude|openai|ollama")
+        print("error: no AI provider defined", file=sys.stderr)
+        print("hint: use --claude, --openai, or --ollama", file=sys.stderr)
+        print("hint: or set: git config reflow.provider claude|openai|ollama", file=sys.stderr)
         sys.exit(1)
