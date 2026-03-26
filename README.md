@@ -1,78 +1,75 @@
-# git-reflow
+# Reflow
 
-A git subcommand to reword commit messages interactively or automatically via the Claude API.
+Reflow is a git extension designed to help you stay focused by reducing Git friction during vibe coding.
 
-## Installation
+Reflow was built for developers who get into a flow state and do not want to stop to think about commit messages. Instead of interrupting your momentum, you can save quick checkpoints of what you have staged and let AI organize them later into clear, consistent, and useful commits.
 
-```bash
-cd git-reflow
+## Install
+
+```sh
 ./install.sh
 ```
 
-This copies `git-reflow` to `~/bin/` and ensures `~/bin` is in your `$PATH`.
-
 ## Usage
 
-```bash
-# Reword all commits interactively (prompts for each one)
-git reflow
+```sh
+# Reword branch commits
+git reflow --claude
+git reflow --openai
+git reflow --ollama
+git reflow 5 --claude
 
-# Reword the last 5 commits interactively
-git reflow HEAD~5
+# Checkpoint commits (create)
+git ck
 
-# Auto-generate all messages using Claude API
-git reflow --auto
+# Reword only checkpoint commits
+git rw ck --claude
 
-# Auto-generate messages for the last 5 commits
-git reflow HEAD~5 --auto
+# Squash checkpoints into one commit
+git sq --claude
+
+# Amend last commit
+git ra --claude
+
+# Rename current branch
+git rb --claude
+git rb --claude --prefix feature
 ```
 
-## Modes
+## Configuration
 
-### Interactive mode (default)
+```sh
+# Providers
+git config reflow.provider claude|openai|ollama
 
-For each commit, shows the current message and changed files, then prompts for a new message. Press Enter to keep the existing message.
+# Models
+git config reflow.claudeModel claude-haiku-4-5-20251001
+git config reflow.openaiModel gpt-4o-mini
+git config reflow.ollamaModel llama3.2
+git config reflow.ollamaUrl http://localhost:11434
 
-```
-──────────────────────────────────────────
-Commit: a04550b
-Current: Fix settings and URL config
+# Behavior
+git config reflow.autoAccept True
+git config reflow.checkpointAutoStage true
+git config reflow.contextLines 10
+git config reflow.branchContextLines 3
+git config reflow.branchPrefix feature
 
- config/settings.py | 2 +-
- tracker/urls.py    | 3 +-
-
-New message (≤5 words, blank = keep): _
-```
-
-### Auto mode (`--auto`)
-
-Sends the full commit log and file stats to the Claude API (`claude-haiku-4-5`). Claude generates a concise, imperative message (≤5 words) for each commit based on the files changed. You review the proposed messages before they are applied.
-
-Requires `ANTHROPIC_API_KEY` and `curl` to be available.
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-git reflow --auto
+# Custom prompts
+git config reflow.commitPrompt "Your prompt with {diff}"
+git config reflow.branchPrompt "Your prompt with {diff}"
 ```
 
-Also requires `jq` for JSON handling:
-```bash
-brew install jq      # macOS
-apt install jq       # Debian/Ubuntu
+Per-repo prompts can also be set in a `.reflow` TOML file:
+
+```toml
+commitPrompt = "Your prompt with {diff}"
+branchPrompt = "Your prompt with {diff}"
 ```
 
-## Requirements
+## API Keys
 
-| Feature | Requires |
-|---------|----------|
-| Interactive mode | bash 4+ |
-| Auto mode | bash 4+, curl, jq, `ANTHROPIC_API_KEY` |
-
-## How it works
-
-1. Collects commits oldest-to-newest in the given range
-2. Builds a messages file (one message per line, in order)
-3. Runs `git rebase -i` with two injected scripts:
-   - `GIT_SEQUENCE_EDITOR` marks every commit as `reword`
-   - `GIT_EDITOR` supplies the next message from the file each time git opens an editor
-4. Cleans up all temp files on exit
+```sh
+export GIT_REFLOW_ANTHROPIC_API_KEY=sk-ant-...
+export GIT_REFLOW_OPENAI_API_KEY=sk-...
+```
