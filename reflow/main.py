@@ -3,8 +3,6 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
-
 from reflow.cli import CLIParser, ConfigFactory
 from reflow.generators import BranchNameGenerator, CheckpointGenerator, MessageGenerator
 from reflow.git_client import GitClient
@@ -113,10 +111,6 @@ def main() -> None:
             print(f"Branch renamed to: {full_name}")
         return
 
-    generator: Optional[MessageGenerator] = None
-
-    if config.use_claude or config.use_openai or config.use_ollama:
-        provider = ProviderFactory().create(config)
-        generator = MessageGenerator(provider, PromptBuilder(), config)
-
+    provider = ProviderFactory().create(config)
+    generator = MessageGenerator(provider, PromptBuilder(), config)
     Reworder(git, config, generator).run()
