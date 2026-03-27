@@ -1,8 +1,8 @@
 # reflow
 
-Reflow is a git extension designed to help you stay focused by reducing Git friction during vibe coding.
+Reflow is a git extension designed to help you stay focused by reducing friction during vibe coding.
 
-Reflow was built for developers who get into a flow state and do not want to stop to think about commit messages. Instead of interrupting your momentum, you can save quick checkpoints of what you have staged and let AI organize them later into clear, consistent, and useful commits.
+Reflow was built for developers who get into a flow state and do not want to stop to think about commit messages and branch names. Instead of interrupting your momentum, you can save quick checkpoints of what you have staged and let AI organize them later into clear, consistent, and useful commits.
 
 ## Installation
 
@@ -10,41 +10,56 @@ Reflow was built for developers who get into a flow state and do not want to sto
 pip install .
 ```
 
-## Reword
+### Installation
+
+
+### Reword
 
 ```sh
-reflow reword                        # alias: rw
+reflow reword
 ```
+alias: **rw**
 
-## Reword Checkpoints
+
+### Checkpoint
 
 ```sh
-reflow reword checkpoint             # alias: rw ck
+reflow checkpoint
 ```
+alias: **ck**
 
-## Checkpoint
+
+### Reword Checkpoints
 
 ```sh
-reflow checkpoint                    # alias: ck
+reflow reword checkpoint
 ```
+alias: **rw ck**
 
-## Squash
+
+### Squash
 
 ```sh
-reflow --squash                      # alias: rf -s
+reflow --squash
 ```
+alias: **rw -s**
 
-## Amend
+
+### Amend
 
 ```sh
-reflow --amend                       # alias: rf -a
+reflow --amend
 ```
+alias: **rf -a**
 
-## Branch
+
+### Branch
 
 ```sh
-reflow --branch                      # alias: rf -b
+reflow --branch
 ```
+alias: **rf -b**
+
 
 ## Configuration
 
