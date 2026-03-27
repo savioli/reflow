@@ -48,6 +48,12 @@ reflow --branch                      # alias: rf -b
 
 ## Configuration
 
+All settings are stored as git config keys under the `reflow` namespace and apply per repository.
+
+```sh
+git config reflow.<key> <value>
+```
+
 **reflow.provider**
 AI provider to use
 default: none | options: `claude`, `openai`, `ollama`
