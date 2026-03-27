@@ -1,7 +1,7 @@
 import json
 import sys
 
-from reflow.prompts import COMMIT_SCHEMA, BRANCH_SCHEMA
+from reflow.prompts import BRANCH_SCHEMA, COMMIT_SCHEMA
 from reflow.providers.base import AIProvider
 
 
@@ -36,7 +36,7 @@ class OllamaProvider(AIProvider):
             self._client.list()
         except Exception:
             print(
-                f"Error: Ollama is not running.\nStart with: ollama serve",
+                "Error: Ollama is not running.\nStart with: ollama serve",
                 file=sys.stderr,
             )
             sys.exit(1)

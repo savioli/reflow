@@ -1,7 +1,6 @@
 import sys
 from typing import Optional
 
-
 COMMIT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,

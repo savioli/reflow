@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Optional
 
-from reflow.prompts import COMMIT_SCHEMA, BRANCH_SCHEMA
+from reflow.prompts import BRANCH_SCHEMA, COMMIT_SCHEMA
 from reflow.providers.base import AIProvider
 
 

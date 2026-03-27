@@ -1,6 +1,6 @@
 import sys
 
-from reflow.prompts import COMMIT_SCHEMA, BRANCH_SCHEMA
+from reflow.prompts import BRANCH_SCHEMA, COMMIT_SCHEMA
 from reflow.providers.base import AIProvider
 
 
