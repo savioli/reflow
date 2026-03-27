@@ -10,8 +10,9 @@ Reflow was built for developers who get into a flow state and do not want to sto
 pip install .
 ```
 
-### Installation
+### Usage
 
+Reflow provides commands for saving checkpoints and using AI to rewrite commit messages and branch names.
 
 ### Reword
 
