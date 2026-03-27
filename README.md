@@ -1,35 +1,49 @@
 # reflow
 
-CLI tool that rewrites git commit messages using AI.
+Reflow is a git extension designed to help you stay focused by reducing Git friction during vibe coding.
 
-## Install
+Reflow was built for developers who get into a flow state and do not want to stop to think about commit messages. Instead of interrupting your momentum, you can save quick checkpoints of what you have staged and let AI organize them later into clear, consistent, and useful commits.
+
+## Installation
 
 ```sh
 pip install .
 ```
 
-## Usage
+## Reword
 
 ```sh
-# Reword branch commits
-reflow reword --claude               # alias: rw --claude
-reflow reword HEAD~5 --claude
+reflow reword                        # alias: rw
+```
 
-# Reword only checkpoint commits
-reflow reword checkpoint --claude    # alias: rw ck --claude
+## Reword Checkpoints
 
-# Create a checkpoint commit
+```sh
+reflow reword checkpoint             # alias: rw ck
+```
+
+## Checkpoint
+
+```sh
 reflow checkpoint                    # alias: ck
+```
 
-# Squash checkpoints into one commit
-reflow --squash --claude             # alias: rf -s --claude
+## Squash
 
-# Amend last commit
-reflow --amend --claude              # alias: rf -a --claude
+```sh
+reflow --squash                      # alias: rf -s
+```
 
-# Rename current branch
-reflow --branch --claude             # alias: rf -b --claude
-reflow --branch --claude --prefix feature
+## Amend
+
+```sh
+reflow --amend                       # alias: rf -a
+```
+
+## Branch
+
+```sh
+reflow --branch                      # alias: rf -b
 ```
 
 ## Configuration
