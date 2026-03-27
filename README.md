@@ -56,51 +56,54 @@ git config reflow.<key> <value>
 
 **reflow.provider**
 AI provider to use
-default: none | options: `claude`, `openai`, `ollama`
+**default**: none
+**options**: claude, openai, ollama
 
 **reflow.claudeModel**
 Claude model to use
-default: `claude-haiku-4-5-20251001`
+**default**: claude-haiku-4-5-20251001
 
 **reflow.openaiModel**
 OpenAI model to use
-default: `gpt-4o-mini`
+**default**: gpt-4o-mini
 
 **reflow.ollamaModel**
 Ollama model to use
-default: `llama3.2`
+**default**: llama3.2
 
 **reflow.ollamaUrl**
 Ollama server URL
-default: `http://localhost:11434`
+**default**: http://localhost:11434
 
 **reflow.contextLines**
 Lines of diff context sent to AI for commit messages
-default: `3`
+**default**: 3
 
 **reflow.branchContextLines**
 Lines of diff context sent to AI for branch names
-default: `3`
+**default**: 3
 
 **reflow.branchPrefix**
 Default prefix for generated branch names
-default: none
+**default**: none
 
 **reflow.autoAccept**
 Skip confirmation prompts before applying changes
-default: `true` | options: `true`, `false`
+**default**: true
+**options**: true, false
 
 **reflow.checkpointAutoStage**
 Automatically stage all changes before creating a checkpoint
-default: `true` | options: `true`, `false`
+**default**: true
+**options**: true, false
 
 **reflow.commitPrompt**
-Custom prompt template for commit messages. Use `{diff}` as placeholder.
-default: none
+Custom prompt template for commit messages, use `{diff}` as placeholder
+**default**: none
 
 **reflow.branchPrompt**
-Custom prompt template for branch names. Use `{diff}` as placeholder.
-default: none
+Custom prompt template for branch names, use `{diff}` as placeholder
+**default**: none
 
 Per-repo prompts can also be set in a `.reflow` TOML file:
 
