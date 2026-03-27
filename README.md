@@ -98,9 +98,13 @@ AI provider to use
 Claude model to use  
 **default**: claude-haiku-4-5-20251001
 
-**reflow.openaiModel**  
-OpenAI model to use  
+**reflow.openaiModel**
+OpenAI model to use
 **default**: gpt-4o-mini
+
+**reflow.openaiUrl**
+Custom OpenAI-compatible API base URL
+**default**: none
 
 **reflow.ollamaModel**  
 Ollama model to use  
@@ -154,3 +158,6 @@ export REFLOW_ANTHROPIC_API_KEY=sk-ant-...
 export REFLOW_OPENAI_API_KEY=sk-...
 export REFLOW_OLLAMA_API_KEY=...
 ```
+
+- Claude: https://console.anthropic.com/settings/keys
+- OpenAI: https://platform.openai.com/api-keys
