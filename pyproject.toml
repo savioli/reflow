@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "git-reflow"
+name = "reflow"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = [
@@ -17,10 +17,10 @@ dependencies = [
 include = ["reflow*"]
 
 [project.scripts]
-git-reflow = "reflow.main:main"
-git-rf     = "reflow.main:main"
-git-rw     = "reflow.main:main"
-git-ck     = "reflow.main:main"
+reflow = "reflow.main:main"
+rf     = "reflow.main:main"
+rw     = "reflow.main:main"
+ck     = "reflow.main:main"
 
 [tool.ruff]
 target-version = "py39"

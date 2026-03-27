@@ -26,7 +26,7 @@ class CLIParser:
             argv = argv[1:]
 
         parser = argparse.ArgumentParser(
-            prog="git reflow",
+            prog="reflow",
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         parser.add_argument("since", nargs="?", default=None, help="Commit range base; defaults to branch commits only")

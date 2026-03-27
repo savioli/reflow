@@ -19,11 +19,11 @@ def _extract_branch_prefix(branch_name: str) -> str:
 
 def main() -> None:
     invoked_as = os.path.basename(sys.argv[0])
-    if invoked_as == "git-rw":
+    if invoked_as == "rw":
         sys.argv.insert(1, "reword")
-    elif invoked_as == "git-ck":
+    elif invoked_as == "ck":
         sys.argv.insert(1, "checkpoint")
-    # git-rf and git-reflow are pass-through aliases
+    # rf and reflow are pass-through aliases
 
     args = CLIParser().parse()
     git = GitClient()

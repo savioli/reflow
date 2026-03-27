@@ -1,6 +1,6 @@
-# git-reflow
+# reflow
 
-Git extension that rewrites commit messages using AI.
+CLI tool that rewrites git commit messages using AI.
 
 ## Install
 
@@ -12,24 +12,24 @@ Git extension that rewrites commit messages using AI.
 
 ```sh
 # Reword branch commits
-git reflow reword --claude           # alias: git rw --claude
-git reflow reword HEAD~5 --claude
+reflow reword --claude               # alias: rw --claude
+reflow reword HEAD~5 --claude
 
 # Reword only checkpoint commits
-git reflow reword checkpoint --claude  # alias: git rw ck --claude
+reflow reword checkpoint --claude    # alias: rw ck --claude
 
 # Create a checkpoint commit
-git reflow checkpoint                # alias: git ck
+reflow checkpoint                    # alias: ck
 
 # Squash checkpoints into one commit
-git reflow --squash --claude         # alias: git rf -s --claude
+reflow --squash --claude             # alias: rf -s --claude
 
 # Amend last commit
-git reflow --amend --claude          # alias: git rf -a --claude
+reflow --amend --claude              # alias: rf -a --claude
 
 # Rename current branch
-git reflow --branch --claude         # alias: git rf -b --claude
-git reflow --branch --claude --prefix feature
+reflow --branch --claude             # alias: rf -b --claude
+reflow --branch --claude --prefix feature
 ```
 
 ## Configuration
@@ -68,4 +68,5 @@ branchPrompt = "Your prompt with {diff}"
 ```sh
 export GIT_REFLOW_ANTHROPIC_API_KEY=sk-ant-...
 export GIT_REFLOW_OPENAI_API_KEY=sk-...
+export GIT_REFLOW_OLLAMA_API_KEY=...      # uses ollama.com by default
 ```
