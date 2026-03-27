@@ -48,27 +48,53 @@ reflow --branch                      # alias: rf -b
 
 ## Configuration
 
-```sh
-# Provider
-git config reflow.provider claude|openai|ollama
+**reflow.provider**
+AI provider to use
+default: none | options: `claude`, `openai`, `ollama`
 
-# Models
-git config reflow.claudeModel claude-haiku-4-5-20251001
-git config reflow.openaiModel gpt-4o-mini
-git config reflow.ollamaModel llama3.2
-git config reflow.ollamaUrl http://localhost:11434
+**reflow.claudeModel**
+Claude model to use
+default: `claude-haiku-4-5-20251001`
 
-# Behavior
-git config reflow.autoAccept false          # prompt before applying (default: true)
-git config reflow.checkpointAutoStage false # don't auto-stage on checkpoint (default: true)
-git config reflow.contextLines 10
-git config reflow.branchContextLines 3
-git config reflow.branchPrefix feature
+**reflow.openaiModel**
+OpenAI model to use
+default: `gpt-4o-mini`
 
-# Custom prompts
-git config reflow.commitPrompt "Your prompt with {diff}"
-git config reflow.branchPrompt "Your prompt with {diff}"
-```
+**reflow.ollamaModel**
+Ollama model to use
+default: `llama3.2`
+
+**reflow.ollamaUrl**
+Ollama server URL
+default: `http://localhost:11434`
+
+**reflow.contextLines**
+Lines of diff context sent to AI for commit messages
+default: `3`
+
+**reflow.branchContextLines**
+Lines of diff context sent to AI for branch names
+default: `3`
+
+**reflow.branchPrefix**
+Default prefix for generated branch names
+default: none
+
+**reflow.autoAccept**
+Skip confirmation prompts before applying changes
+default: `true` | options: `true`, `false`
+
+**reflow.checkpointAutoStage**
+Automatically stage all changes before creating a checkpoint
+default: `true` | options: `true`, `false`
+
+**reflow.commitPrompt**
+Custom prompt template for commit messages. Use `{diff}` as placeholder.
+default: none
+
+**reflow.branchPrompt**
+Custom prompt template for branch names. Use `{diff}` as placeholder.
+default: none
 
 Per-repo prompts can also be set in a `.reflow` TOML file:
 
