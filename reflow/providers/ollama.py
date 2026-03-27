@@ -21,7 +21,10 @@ class OllamaProvider(AIProvider):
         try:
             import ollama as _ollama
         except ImportError:
-            print("Error: ollama package is required. Install with: pip install ollama", file=sys.stderr)
+            print(
+                "Error: ollama package is required. Install with: pip install ollama",
+                file=sys.stderr,
+            )
             sys.exit(1)
         self._ollama = _ollama
         self._model = model
@@ -32,7 +35,10 @@ class OllamaProvider(AIProvider):
         try:
             self._client.list()
         except Exception:
-            print(f"Error: Ollama is not running.\nStart with: ollama serve", file=sys.stderr)
+            print(
+                f"Error: Ollama is not running.\nStart with: ollama serve",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     def _chat(self, prompt: str, schema: dict, system: str) -> dict:

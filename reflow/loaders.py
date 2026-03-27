@@ -13,9 +13,19 @@ else:
 
 class GitConfigLoader:
     _KEYS = [
-        "provider", "claudeModel", "ollamaModel", "ollamaUrl",
-        "openaiModel", "openaiUrl", "commitPrompt", "branchPrompt",
-        "contextLines", "branchContextLines", "branchPrefix", "autoAccept", "checkpointAutoStage",
+        "provider",
+        "claudeModel",
+        "ollamaModel",
+        "ollamaUrl",
+        "openaiModel",
+        "openaiUrl",
+        "commitPrompt",
+        "branchPrompt",
+        "contextLines",
+        "branchContextLines",
+        "branchPrefix",
+        "autoAccept",
+        "checkpointAutoStage",
     ]
 
     def load(self) -> dict[str, str]:
@@ -23,7 +33,8 @@ class GitConfigLoader:
         for key in self._KEYS:
             result = subprocess.run(
                 ["git", "config", "--get", f"reflow.{key}"],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0:
                 cfg[key] = result.stdout.strip()
@@ -36,7 +47,8 @@ class ReflowFileLoader:
             return {}
         root = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if root.returncode != 0:
             return {}

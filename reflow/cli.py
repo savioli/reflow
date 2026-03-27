@@ -29,18 +29,55 @@ class CLIParser:
             prog="reflow",
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        parser.add_argument("since", nargs="?", default=None, help="Commit range base; defaults to branch commits only")
+        parser.add_argument(
+            "since",
+            nargs="?",
+            default=None,
+            help="Commit range base; defaults to branch commits only",
+        )
         parser.add_argument("--claude", action="store_true", help="Use Claude")
-        parser.add_argument("--claude-model", default=None, metavar="MODEL", help="Claude model name")
+        parser.add_argument(
+            "--claude-model", default=None, metavar="MODEL", help="Claude model name"
+        )
         parser.add_argument("--ollama", action="store_true", help="Use Ollama")
-        parser.add_argument("--ollama-model", default=None, metavar="MODEL", help="Ollama model name")
+        parser.add_argument(
+            "--ollama-model", default=None, metavar="MODEL", help="Ollama model name"
+        )
         parser.add_argument("--openai", action="store_true", help="Use OpenAI")
-        parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
-        parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
-        parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
-        parser.add_argument("--squash", "-s", action="store_true", help="Squash checkpoint commits into one")
-        parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name")
-        parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity: -v AI output, -vv prompts")
+        parser.add_argument(
+            "--openai-model", default=None, metavar="MODEL", help="OpenAI model name"
+        )
+        parser.add_argument(
+            "--branch",
+            "-b",
+            action="store_true",
+            help="Generate and rename current branch name based on diff",
+        )
+        parser.add_argument(
+            "--amend",
+            "-a",
+            action="store_true",
+            help="AI rewrite last commit message via amend",
+        )
+        parser.add_argument(
+            "--squash",
+            "-s",
+            action="store_true",
+            help="Squash checkpoint commits into one",
+        )
+        parser.add_argument(
+            "--prefix",
+            default=None,
+            metavar="PREFIX",
+            help="Prefix to prepend to generated branch name",
+        )
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            action="count",
+            default=0,
+            help="Verbosity: -v AI output, -vv prompts",
+        )
         args = parser.parse_args(argv)
         args.checkpoint = checkpoint
         args.checkpoint_reword = checkpoint_reword
@@ -57,9 +94,15 @@ class ConfigFactory:
         file_cfg = self._file_loader.load()
         default_provider = git_cfg.get("provider", "")
 
-        use_ollama = args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
-        use_openai = args.openai or "openaiModel" in git_cfg or default_provider == "openai"
-        use_claude = args.claude or "claudeModel" in git_cfg or default_provider == "claude"
+        use_ollama = (
+            args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
+        )
+        use_openai = (
+            args.openai or "openaiModel" in git_cfg or default_provider == "openai"
+        )
+        use_claude = (
+            args.claude or "claudeModel" in git_cfg or default_provider == "claude"
+        )
 
         if not (use_ollama or use_openai or use_claude):
             if os.environ.get("GIT_REFLOW_ANTHROPIC_API_KEY"):
@@ -80,11 +123,15 @@ class ConfigFactory:
             branch=args.branch,
             verbosity=args.verbose,
             use_claude=use_claude,
-            claude_model=args.claude_model or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
+            claude_model=args.claude_model
+            or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
             use_ollama=use_ollama,
             ollama_model=args.ollama_model or git_cfg.get("ollamaModel", "llama3.2"),
-            ollama_url=git_cfg.get("ollamaUrl") or (
-                "https://ollama.com" if os.environ.get("GIT_REFLOW_OLLAMA_API_KEY") else "http://localhost:11434"
+            ollama_url=git_cfg.get("ollamaUrl")
+            or (
+                "https://ollama.com"
+                if os.environ.get("GIT_REFLOW_OLLAMA_API_KEY")
+                else "http://localhost:11434"
             ),
             ollama_api_key=os.environ.get("GIT_REFLOW_OLLAMA_API_KEY", ""),
             use_openai=use_openai,
@@ -95,10 +142,12 @@ class ConfigFactory:
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
             auto_accept=git_cfg.get("autoAccept", "true").lower() != "false",
-            checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower() != "false",
+            checkpoint_auto_stage=git_cfg.get("checkpointAutoStage", "true").lower()
+            != "false",
             squash=args.squash,
             amend=args.amend,
             prompt_template=file_cfg.get("commitPrompt") or git_cfg.get("commitPrompt"),
-            branch_prompt_template=file_cfg.get("branchPrompt") or git_cfg.get("branchPrompt"),
+            branch_prompt_template=file_cfg.get("branchPrompt")
+            or git_cfg.get("branchPrompt"),
             anthropic_api_key=os.environ.get("GIT_REFLOW_ANTHROPIC_API_KEY", ""),
         )

@@ -25,9 +25,14 @@ class OpenAIProvider(AIProvider):
         try:
             import openai as _openai
         except ImportError:
-            print("Error: openai package is required. Install with: pip install openai", file=sys.stderr)
+            print(
+                "Error: openai package is required. Install with: pip install openai",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        self._client = _openai.OpenAI(api_key=api_key, **({"base_url": base_url} if base_url else {}))
+        self._client = _openai.OpenAI(
+            api_key=api_key, **({"base_url": base_url} if base_url else {})
+        )
         self._model = model
 
     def _call(self, prompt: str, schema: dict, system: str) -> dict:

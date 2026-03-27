@@ -19,32 +19,55 @@ class GitClient:
         """Return merge-base commit hash where current branch diverged, or '' if undetermined."""
         up = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if up.returncode == 0 and up.stdout.strip():
             base = subprocess.run(
                 ["git", "merge-base", "HEAD", up.stdout.strip()],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if base.returncode == 0:
                 merge_base = base.stdout.strip()
-                head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+                head = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
                 if merge_base != head.stdout.strip():
                     return merge_base
 
-        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
         current = self.get_current_branch()
-        refs = subprocess.run(
-            ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/", "refs/remotes/"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip().splitlines()
+        refs = (
+            subprocess.run(
+                [
+                    "git",
+                    "for-each-ref",
+                    "--format=%(refname:short)",
+                    "refs/heads/",
+                    "refs/remotes/",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            .stdout.strip()
+            .splitlines()
+        )
 
         best_base = ""
         best_count = None
         for ref in refs:
             if ref == current or ref.endswith("/HEAD"):
                 continue
-            mb = subprocess.run(["git", "merge-base", "HEAD", ref], capture_output=True, text=True)
+            mb = subprocess.run(
+                ["git", "merge-base", "HEAD", ref], capture_output=True, text=True
+            )
             if mb.returncode != 0:
                 continue
             merge_base = mb.stdout.strip()
@@ -52,7 +75,8 @@ class GitClient:
                 continue
             count_result = subprocess.run(
                 ["git", "rev-list", "--count", f"{merge_base}..HEAD"],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if count_result.returncode != 0:
                 continue
@@ -79,15 +103,26 @@ class GitClient:
 
     def get_diff(self, commit_hash: str, context_lines: int) -> str:
         result = subprocess.run(
-            ["git", "diff-tree", "--no-commit-id", "-p", f"-U{context_lines}", commit_hash],
-            capture_output=True, text=True, check=True,
+            [
+                "git",
+                "diff-tree",
+                "--no-commit-id",
+                "-p",
+                f"-U{context_lines}",
+                commit_hash,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout
 
     def get_current_branch(self) -> str:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip()
 
@@ -96,16 +131,22 @@ class GitClient:
         if since == "--root":
             root = subprocess.run(
                 ["git", "rev-list", "--max-parents=0", "HEAD"],
-                capture_output=True, text=True, check=True,
+                capture_output=True,
+                text=True,
+                check=True,
             ).stdout.strip()
             result = subprocess.run(
                 ["git", "diff", ctx, f"{root}..HEAD"],
-                capture_output=True, text=True, check=True,
+                capture_output=True,
+                text=True,
+                check=True,
             )
         else:
             result = subprocess.run(
                 ["git", "diff", ctx, f"{since}..HEAD"],
-                capture_output=True, text=True, check=True,
+                capture_output=True,
+                text=True,
+                check=True,
             )
         return result.stdout
 
@@ -115,14 +156,19 @@ class GitClient:
     def get_stat(self, commit_hash: str) -> str:
         result = subprocess.run(
             ["git", "diff-tree", "--no-commit-id", "-r", "--stat", commit_hash],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout
 
     def get_checkpoint_hashes(self, since: str) -> list[str]:
         pattern = re.compile(r"^Checkpoint #\d+$", re.IGNORECASE)
-        return [h for h in self.get_hashes(since)
-                if pattern.match(self.get_original_message(h))]
+        return [
+            h
+            for h in self.get_hashes(since)
+            if pattern.match(self.get_original_message(h))
+        ]
 
     def get_combined_diff(self, hashes: list[str], context_lines: int) -> str:
         return "".join(self.get_diff(h, context_lines) for h in hashes)
@@ -134,7 +180,9 @@ class GitClient:
         subprocess.run(["git", "add", "-A"], check=True)
 
     def has_staged_changes(self) -> bool:
-        result = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True)
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], capture_output=True
+        )
         return result.returncode != 0
 
     def commit(self, message: str) -> None:
@@ -143,13 +191,20 @@ class GitClient:
     def get_original_message(self, commit_hash: str) -> str:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%s", commit_hash],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip()
 
-    def rebase(self, since: str, messages: list[str], messages_file: Path,
-               hashes_to_reword: Optional[set[str]] = None,
-               squash_hashes: Optional[set[str]] = None) -> None:
+    def rebase(
+        self,
+        since: str,
+        messages: list[str],
+        messages_file: Path,
+        hashes_to_reword: Optional[set[str]] = None,
+        squash_hashes: Optional[set[str]] = None,
+    ) -> None:
         messages_file.write_text("\n".join(messages) + "\n")
 
         counter_file = Path(tempfile.mktemp())
@@ -217,10 +272,16 @@ class GitClient:
         msg_editor.chmod(msg_editor.stat().st_mode | stat.S_IEXEC)
 
         try:
-            cmd = ["git", "rebase", "-i"] + (["--root"] if since == "--root" else [since])
+            cmd = ["git", "rebase", "-i"] + (
+                ["--root"] if since == "--root" else [since]
+            )
             subprocess.run(
                 cmd,
-                env={**os.environ, "GIT_SEQUENCE_EDITOR": str(seq_editor), "GIT_EDITOR": str(msg_editor)},
+                env={
+                    **os.environ,
+                    "GIT_SEQUENCE_EDITOR": str(seq_editor),
+                    "GIT_EDITOR": str(msg_editor),
+                },
                 check=True,
             )
         finally:

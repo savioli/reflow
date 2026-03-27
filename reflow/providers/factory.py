@@ -10,14 +10,21 @@ from reflow.providers.openai import OpenAIProvider
 class ProviderFactory:
     def create(self, config: Config) -> AIProvider:
         if config.use_openai:
-            return OpenAIProvider(config.openai_api_key, config.openai_model, config.openai_url)
+            return OpenAIProvider(
+                config.openai_api_key, config.openai_model, config.openai_url
+            )
         if config.use_ollama:
-            provider = OllamaProvider(config.ollama_url, config.ollama_model, config.ollama_api_key)
+            provider = OllamaProvider(
+                config.ollama_url, config.ollama_model, config.ollama_api_key
+            )
             provider.check()
             return provider
         if config.use_claude:
             return ClaudeProvider(config.anthropic_api_key, config.claude_model)
         print("error: no AI provider defined", file=sys.stderr)
         print("hint: use --claude, --openai, or --ollama", file=sys.stderr)
-        print("hint: or set: git config reflow.provider claude|openai|ollama", file=sys.stderr)
+        print(
+            "hint: or set: git config reflow.provider claude|openai|ollama",
+            file=sys.stderr,
+        )
         sys.exit(1)

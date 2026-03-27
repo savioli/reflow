@@ -53,13 +53,27 @@ class PromptBuilder:
     )
 
     def build(self, diff: str, template: Optional[str] = None) -> str:
-        if template and "{diff}" not in template and not getattr(self, "_warned_diff", False):
-            print("Warning: reflow.commitPrompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+        if (
+            template
+            and "{diff}" not in template
+            and not getattr(self, "_warned_diff", False)
+        ):
+            print(
+                "Warning: reflow.commitPrompt does not contain {diff} — the diff will not be included in the prompt.",
+                file=sys.stderr,
+            )
             self._warned_diff = True
         return (template or self._DEFAULT).replace("{diff}", diff)
 
     def build_branch(self, diff: str, template: Optional[str] = None) -> str:
-        if template and "{diff}" not in template and not getattr(self, "_warned_branch_diff", False):
-            print("Warning: reflow.branchPrompt does not contain {diff} — the diff will not be included in the prompt.", file=sys.stderr)
+        if (
+            template
+            and "{diff}" not in template
+            and not getattr(self, "_warned_branch_diff", False)
+        ):
+            print(
+                "Warning: reflow.branchPrompt does not contain {diff} — the diff will not be included in the prompt.",
+                file=sys.stderr,
+            )
             self._warned_branch_diff = True
         return (template or self._BRANCH).replace("{diff}", diff)

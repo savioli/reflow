@@ -51,7 +51,9 @@ def main() -> None:
         print(f"Squashing {len(checkpoint_hashes)} checkpoint commit(s)...")
         provider = ProviderFactory().create(config)
         combined_diff = git.get_combined_diff(checkpoint_hashes, config.context_lines)
-        msg = MessageGenerator(provider, PromptBuilder(), config).generate("squash", combined_diff)
+        msg = MessageGenerator(provider, PromptBuilder(), config).generate(
+            "squash", combined_diff
+        )
         if not msg:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
@@ -75,7 +77,9 @@ def main() -> None:
         current_msg = git.get_original_message("HEAD")
         diff = git.get_diff("HEAD", config.context_lines)
         provider = ProviderFactory().create(config)
-        new_msg = MessageGenerator(provider, PromptBuilder(), config).generate("HEAD", diff)
+        new_msg = MessageGenerator(provider, PromptBuilder(), config).generate(
+            "HEAD", diff
+        )
         if not new_msg:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
@@ -98,7 +102,9 @@ def main() -> None:
             sys.exit(1)
         since = git.resolve_since(config.since)
         provider = ProviderFactory().create(config)
-        bare_name = BranchNameGenerator(git, provider, PromptBuilder(), config).generate(since)
+        bare_name = BranchNameGenerator(
+            git, provider, PromptBuilder(), config
+        ).generate(since)
         if not bare_name:
             print("Error: could not generate branch name.", file=sys.stderr)
             sys.exit(1)
