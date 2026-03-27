@@ -66,6 +66,8 @@ class ConfigFactory:
                 use_claude = True
             elif os.environ.get("GIT_REFLOW_OPENAI_API_KEY"):
                 use_openai = True
+            elif os.environ.get("GIT_REFLOW_OLLAMA_API_KEY"):
+                use_ollama = True
 
         since_raw = args.since or "--root"
         if since_raw.isdigit():
@@ -81,7 +83,10 @@ class ConfigFactory:
             claude_model=args.claude_model or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
             use_ollama=use_ollama,
             ollama_model=args.ollama_model or git_cfg.get("ollamaModel", "llama3.2"),
-            ollama_url=git_cfg.get("ollamaUrl", "http://localhost:11434"),
+            ollama_url=git_cfg.get("ollamaUrl") or (
+                "https://ollama.com" if os.environ.get("GIT_REFLOW_OLLAMA_API_KEY") else "http://localhost:11434"
+            ),
+            ollama_api_key=os.environ.get("GIT_REFLOW_OLLAMA_API_KEY", ""),
             use_openai=use_openai,
             openai_model=args.openai_model or git_cfg.get("openaiModel", "gpt-4o-mini"),
             openai_url=git_cfg.get("openaiUrl") or None,

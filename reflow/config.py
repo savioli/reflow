@@ -14,6 +14,7 @@ class Config:
     use_ollama: bool = False
     ollama_model: str = "llama3.2"
     ollama_url: str = "http://localhost:11434"
+    ollama_api_key: str = ""
     use_openai: bool = False
     openai_model: str = "gpt-4o-mini"
     openai_url: Optional[str] = None

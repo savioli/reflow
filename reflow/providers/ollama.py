@@ -17,7 +17,7 @@ class OllamaProvider(AIProvider):
         "No explanation, no chat, no preamble, no JSON wrapper."
     )
 
-    def __init__(self, url: str, model: str):
+    def __init__(self, url: str, model: str, api_key: str = ""):
         try:
             import ollama as _ollama
         except ImportError:
@@ -25,7 +25,8 @@ class OllamaProvider(AIProvider):
             sys.exit(1)
         self._ollama = _ollama
         self._model = model
-        self._client = _ollama.Client(host=url, timeout=120)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self._client = _ollama.Client(host=url, timeout=120, headers=headers)
 
     def check(self) -> None:
         try:

@@ -12,7 +12,7 @@ class ProviderFactory:
         if config.use_openai:
             return OpenAIProvider(config.openai_api_key, config.openai_model, config.openai_url)
         if config.use_ollama:
-            provider = OllamaProvider(config.ollama_url, config.ollama_model)
+            provider = OllamaProvider(config.ollama_url, config.ollama_model, config.ollama_api_key)
             provider.check()
             return provider
         if config.use_claude:
