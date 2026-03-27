@@ -61,6 +61,12 @@ class ConfigFactory:
         use_openai = args.openai or "openaiModel" in git_cfg or default_provider == "openai"
         use_claude = args.claude or "claudeModel" in git_cfg or default_provider == "claude"
 
+        if not (use_ollama or use_openai or use_claude):
+            if os.environ.get("GIT_REFLOW_ANTHROPIC_API_KEY"):
+                use_claude = True
+            elif os.environ.get("GIT_REFLOW_OPENAI_API_KEY"):
+                use_openai = True
+
         since_raw = args.since or "--root"
         if since_raw.isdigit():
             since_raw = f"HEAD~{since_raw}"
