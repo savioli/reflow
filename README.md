@@ -15,20 +15,24 @@ pip install .
 
 ### Reword
 
+Rewrites commit messages for all commits on the current branch using AI.
+
 ```sh
 reflow reword
 ```
 alias: **rw**
 
-For rewording the last N commits, you can use:
+Rewrites commit messages for the last N commits using AI.
 
 ```sh
 reflow reword 5
 ```
-Note: **5** is shorthand for **HEAD~5**.
+Note: **5** is shorthand for **HEAD~5**. 
 
 
 ### Checkpoint
+
+Saves a checkpoint commit of the currently staged changes.
 
 ```sh
 reflow checkpoint
@@ -38,6 +42,8 @@ alias: **ck**
 
 ### Reword Checkpoints
 
+Rewrites commit messages only for checkpoint commits on the current branch using AI.
+
 ```sh
 reflow reword checkpoint
 ```
@@ -45,6 +51,8 @@ alias: **rw ck**
 
 
 ### Squash
+
+Squashes all checkpoint commits into a single commit.
 
 ```sh
 reflow --squash
@@ -54,6 +62,8 @@ alias: **rw -s**
 
 ### Amend
 
+Rewrites the last commit message using AI via amend.
+
 ```sh
 reflow --amend
 ```
@@ -61,6 +71,8 @@ alias: **rf -a**
 
 
 ### Branch
+
+Generates and renames the current branch based on the diff using AI.
 
 ```sh
 reflow --branch
