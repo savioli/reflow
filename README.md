@@ -5,7 +5,7 @@ CLI tool that rewrites git commit messages using AI.
 ## Install
 
 ```sh
-./install.sh
+pip install .
 ```
 
 ## Usage
