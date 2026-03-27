@@ -20,6 +20,13 @@ reflow reword
 ```
 alias: **rw**
 
+For rewording the last N commits, you can use:
+
+```sh
+reflow reword 5
+```
+Note: **5** is shorthand for **HEAD~5**.
+
 
 ### Checkpoint
 
