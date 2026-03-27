@@ -105,11 +105,11 @@ class ConfigFactory:
         )
 
         if not (use_ollama or use_openai or use_claude):
-            if os.environ.get("GIT_REFLOW_ANTHROPIC_API_KEY"):
+            if os.environ.get("REFLOW_ANTHROPIC_API_KEY"):
                 use_claude = True
-            elif os.environ.get("GIT_REFLOW_OPENAI_API_KEY"):
+            elif os.environ.get("REFLOW_OPENAI_API_KEY"):
                 use_openai = True
-            elif os.environ.get("GIT_REFLOW_OLLAMA_API_KEY"):
+            elif os.environ.get("REFLOW_OLLAMA_API_KEY"):
                 use_ollama = True
 
         since_raw = args.since or "--root"
@@ -130,14 +130,14 @@ class ConfigFactory:
             ollama_url=git_cfg.get("ollamaUrl")
             or (
                 "https://ollama.com"
-                if os.environ.get("GIT_REFLOW_OLLAMA_API_KEY")
+                if os.environ.get("REFLOW_OLLAMA_API_KEY")
                 else "http://localhost:11434"
             ),
-            ollama_api_key=os.environ.get("GIT_REFLOW_OLLAMA_API_KEY", ""),
+            ollama_api_key=os.environ.get("REFLOW_OLLAMA_API_KEY", ""),
             use_openai=use_openai,
             openai_model=args.openai_model or git_cfg.get("openaiModel", "gpt-4o-mini"),
             openai_url=git_cfg.get("openaiUrl") or None,
-            openai_api_key=os.environ.get("GIT_REFLOW_OPENAI_API_KEY", ""),
+            openai_api_key=os.environ.get("REFLOW_OPENAI_API_KEY", ""),
             context_lines=int(git_cfg.get("contextLines", 3)),
             branch_context_lines=int(git_cfg.get("branchContextLines", 3)),
             branch_prefix=args.prefix or git_cfg.get("branchPrefix", ""),
@@ -149,5 +149,5 @@ class ConfigFactory:
             prompt_template=file_cfg.get("commitPrompt") or git_cfg.get("commitPrompt"),
             branch_prompt_template=file_cfg.get("branchPrompt")
             or git_cfg.get("branchPrompt"),
-            anthropic_api_key=os.environ.get("GIT_REFLOW_ANTHROPIC_API_KEY", ""),
+            anthropic_api_key=os.environ.get("REFLOW_ANTHROPIC_API_KEY", ""),
         )

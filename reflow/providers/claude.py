@@ -18,7 +18,7 @@ class ClaudeProvider(AIProvider):
 
     def __init__(self, api_key: str, model: str):
         if not api_key:
-            print("error: GIT_REFLOW_ANTHROPIC_API_KEY is not set", file=sys.stderr)
+            print("error: REFLOW_ANTHROPIC_API_KEY is not set", file=sys.stderr)
             sys.exit(1)
         try:
             import anthropic as _anthropic
