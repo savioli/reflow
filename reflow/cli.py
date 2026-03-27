@@ -12,16 +12,17 @@ class CLIParser:
         if argv is None:
             argv = sys.argv[1:]
 
-        checkpoint_reword = bool(argv) and argv[0] == "ck"
-        if checkpoint_reword:
+        reword = bool(argv) and argv[0] in ("reword", "rw")
+        if reword:
             argv = argv[1:]
+            checkpoint_reword = bool(argv) and argv[0] in ("checkpoint", "ck")
+            if checkpoint_reword:
+                argv = argv[1:]
+        else:
+            checkpoint_reword = False
 
-        checkpoint = bool(argv) and argv[0] == "checkpoint"
+        checkpoint = bool(argv) and argv[0] in ("checkpoint", "ck")
         if checkpoint:
-            argv = argv[1:]
-
-        squash = bool(argv) and argv[0] == "squash"
-        if squash:
             argv = argv[1:]
 
         parser = argparse.ArgumentParser(
@@ -37,12 +38,12 @@ class CLIParser:
         parser.add_argument("--openai-model", default=None, metavar="MODEL", help="OpenAI model name")
         parser.add_argument("--branch", "-b", action="store_true", help="Generate and rename current branch name based on diff")
         parser.add_argument("--amend", "-a", action="store_true", help="AI rewrite last commit message via amend")
+        parser.add_argument("--squash", "-s", action="store_true", help="Squash checkpoint commits into one")
         parser.add_argument("--prefix", default=None, metavar="PREFIX", help="Prefix to prepend to generated branch name")
         parser.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity: -v AI output, -vv prompts")
         args = parser.parse_args(argv)
         args.checkpoint = checkpoint
         args.checkpoint_reword = checkpoint_reword
-        args.squash = squash
         return args
 
 

@@ -1,8 +1,6 @@
-# Reflow
+# git-reflow
 
-Reflow is a git extension designed to help you stay focused by reducing Git friction during vibe coding.
-
-Reflow was built for developers who get into a flow state and do not want to stop to think about commit messages. Instead of interrupting your momentum, you can save quick checkpoints of what you have staged and let AI organize them later into clear, consistent, and useful commits.
+Git extension that rewrites commit messages using AI.
 
 ## Install
 
@@ -14,32 +12,30 @@ Reflow was built for developers who get into a flow state and do not want to sto
 
 ```sh
 # Reword branch commits
-git reflow --claude
-git reflow --openai
-git reflow --ollama
-git reflow 5 --claude
-
-# Checkpoint commits (create)
-git ck
+git reflow reword --claude           # alias: git rw --claude
+git reflow reword HEAD~5 --claude
 
 # Reword only checkpoint commits
-git rw ck --claude
+git reflow reword checkpoint --claude  # alias: git rw ck --claude
+
+# Create a checkpoint commit
+git reflow checkpoint                # alias: git ck
 
 # Squash checkpoints into one commit
-git sq --claude
+git reflow --squash --claude         # alias: git rf -s --claude
 
 # Amend last commit
-git ra --claude
+git reflow --amend --claude          # alias: git rf -a --claude
 
 # Rename current branch
-git rb --claude
-git rb --claude --prefix feature
+git reflow --branch --claude         # alias: git rf -b --claude
+git reflow --branch --claude --prefix feature
 ```
 
 ## Configuration
 
 ```sh
-# Providers
+# Provider
 git config reflow.provider claude|openai|ollama
 
 # Models
@@ -49,8 +45,8 @@ git config reflow.ollamaModel llama3.2
 git config reflow.ollamaUrl http://localhost:11434
 
 # Behavior
-git config reflow.autoAccept True
-git config reflow.checkpointAutoStage true
+git config reflow.autoAccept false          # prompt before applying (default: true)
+git config reflow.checkpointAutoStage false # don't auto-stage on checkpoint (default: true)
 git config reflow.contextLines 10
 git config reflow.branchContextLines 3
 git config reflow.branchPrefix feature
