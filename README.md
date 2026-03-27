@@ -98,12 +98,16 @@ AI provider to use
 Claude model to use  
 **default**: claude-haiku-4-5-20251001
 
-**reflow.openaiModel**
-OpenAI model to use
+**reflow.claudeUrl**  
+Custom Anthropic-compatible API base URL  
+**default**: none
+
+**reflow.openaiModel**  
+OpenAI model to use  
 **default**: gpt-4o-mini
 
-**reflow.openaiUrl**
-Custom OpenAI-compatible API base URL
+**reflow.openaiUrl**  
+Custom OpenAI-compatible API base URL  
 **default**: none
 
 **reflow.ollamaModel**  

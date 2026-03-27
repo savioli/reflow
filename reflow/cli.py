@@ -125,6 +125,7 @@ class ConfigFactory:
             use_claude=use_claude,
             claude_model=args.claude_model
             or git_cfg.get("claudeModel", "claude-haiku-4-5-20251001"),
+            claude_url=git_cfg.get("claudeUrl") or None,
             use_ollama=use_ollama,
             ollama_model=args.ollama_model or git_cfg.get("ollamaModel", "llama3.2"),
             ollama_url=git_cfg.get("ollamaUrl")

@@ -11,6 +11,7 @@ class Config:
     verbosity: int = 0
     use_claude: bool = False
     claude_model: str = "claude-haiku-4-5-20251001"
+    claude_url: Optional[str] = None
     use_ollama: bool = False
     ollama_model: str = "llama3.2"
     ollama_url: str = "http://localhost:11434"

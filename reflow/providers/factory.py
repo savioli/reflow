@@ -20,7 +20,7 @@ class ProviderFactory:
             provider.check()
             return provider
         if config.use_claude:
-            return ClaudeProvider(config.anthropic_api_key, config.claude_model)
+            return ClaudeProvider(config.anthropic_api_key, config.claude_model, config.claude_url)
         print("error: no AI provider defined", file=sys.stderr)
         print("hint: use --claude, --openai, or --ollama", file=sys.stderr)
         print(

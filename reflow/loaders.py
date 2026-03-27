@@ -15,6 +15,7 @@ class GitConfigLoader:
     _KEYS = [
         "provider",
         "claudeModel",
+        "claudeUrl",
         "ollamaModel",
         "ollamaUrl",
         "openaiModel",

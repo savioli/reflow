@@ -16,7 +16,7 @@ class ClaudeProvider(AIProvider):
         "No explanation, no chat, no preamble."
     )
 
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str, base_url: str | None = None):
         if not api_key:
             print("error: REFLOW_ANTHROPIC_API_KEY is not set", file=sys.stderr)
             sys.exit(1)
@@ -28,7 +28,9 @@ class ClaudeProvider(AIProvider):
                 file=sys.stderr,
             )
             sys.exit(1)
-        self._client = _anthropic.Anthropic(api_key=api_key)
+        self._client = _anthropic.Anthropic(
+            api_key=api_key, **({"base_url": base_url} if base_url else {})
+        )
         self._model = model
 
     def _call(
