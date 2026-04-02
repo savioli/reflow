@@ -203,6 +203,15 @@ class GitClient:
             return
         subprocess.run(["git", "commit", "-m", message], check=True)
 
+    def get_short_hash(self, ref: str = "HEAD") -> str:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", ref],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
     def get_original_message(self, commit_hash: str) -> str:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%s", commit_hash],

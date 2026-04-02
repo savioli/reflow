@@ -75,6 +75,7 @@ def main() -> None:
         return
 
     if config.amend:
+        current_hash = git.get_short_hash()
         current_msg = git.get_original_message("HEAD")
         diff = git.get_diff("HEAD", config.context_lines)
         provider = ProviderFactory().create(config)
@@ -84,17 +85,18 @@ def main() -> None:
         if not new_msg:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
-        print(f"  Current:  {current_msg}")
-        print(f"  Proposed: {new_msg}")
-        if config.auto_accept or config.dry_run:
-            git.amend(new_msg)
-            if not config.dry_run:
-                print(f"Amended: {new_msg}")
-        else:
-            confirm = input("Amend? [Y/n] ").strip().lower()
-            if confirm != "n":
-                git.amend(new_msg)
-                print(f"Amended: {new_msg}")
+        print("Amending commit...")
+        print()
+        print(f"{current_hash} {current_msg}")
+        if not config.auto_accept and not config.dry_run:
+            confirm = input(f"\nAmend to: {new_msg}\nProceed? [Y/n] ").strip().lower()
+            if confirm == "n":
+                print("Aborted.")
+                return
+        print()
+        git.amend(new_msg)
+        if not config.dry_run:
+            print(f"\nSuccessfully amended commit to: {new_msg}")
         return
 
     if config.branch:
