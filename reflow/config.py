@@ -27,6 +27,7 @@ class Config:
     checkpoint_auto_stage: bool = True
     squash: bool = False
     amend: bool = False
+    dry_run: bool = False
     prompt_template: Optional[str] = None
     branch_prompt_template: Optional[str] = None
     anthropic_api_key: str = ""

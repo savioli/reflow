@@ -62,7 +62,7 @@ class Reworder:
             print(f"  {commit_hash[:7]}  {msg}")
         print()
 
-        if not self._config.auto_accept:
+        if not self._config.auto_accept and not self._config.dry_run:
             confirm = input("Apply these messages? [Y/n] ").strip().lower()
             if confirm == "n":
                 print("Aborted.")

@@ -27,15 +27,14 @@ def main() -> None:
     # rf and reflow are pass-through aliases
 
     args = CLIParser().parse()
-    git = GitClient()
-    git.assert_in_repo()
-
+    GitClient().assert_in_repo()
     config = ConfigFactory(GitConfigLoader(), ReflowFileLoader()).from_args(args)
+    git = GitClient(dry_run=config.dry_run)
 
     if config.checkpoint:
         if config.checkpoint_auto_stage:
             git.stage_all()
-        if not git.has_staged_changes():
+        if not config.dry_run and not git.has_staged_changes():
             print("Error: nothing to commit.", file=sys.stderr)
             sys.exit(1)
         msg = CheckpointGenerator().next_message()
@@ -59,7 +58,7 @@ def main() -> None:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
         print(f"  Message: {msg}")
-        if not config.auto_accept:
+        if not config.auto_accept and not config.dry_run:
             confirm = input("Squash checkpoints? [Y/n] ").strip().lower()
             if confirm == "n":
                 print("Aborted.")
@@ -86,9 +85,10 @@ def main() -> None:
             sys.exit(1)
         print(f"  Current:  {current_msg}")
         print(f"  Proposed: {new_msg}")
-        if config.auto_accept:
+        if config.auto_accept or config.dry_run:
             git.amend(new_msg)
-            print(f"Amended: {new_msg}")
+            if not config.dry_run:
+                print(f"Amended: {new_msg}")
         else:
             confirm = input("Amend? [Y/n] ").strip().lower()
             if confirm != "n":
@@ -113,9 +113,10 @@ def main() -> None:
         full_name = f"{prefix}/{bare_name}" if prefix else bare_name
         print(f"  Current:   {current}")
         print(f"  Generated: {full_name}")
-        if config.auto_accept:
+        if config.auto_accept or config.dry_run:
             git.rename_branch(full_name)
-            print(f"Branch renamed to: {full_name}")
+            if not config.dry_run:
+                print(f"Branch renamed to: {full_name}")
         else:
             confirm = input("Rename branch? [Y/n] ").strip().lower()
             if confirm != "n":

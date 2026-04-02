@@ -9,6 +9,9 @@ from typing import Optional
 
 
 class GitClient:
+    def __init__(self, dry_run: bool = False) -> None:
+        self._dry_run = dry_run
+
     def assert_in_repo(self) -> None:
         result = subprocess.run(["git", "rev-parse", "--git-dir"], capture_output=True)
         if result.returncode != 0:
@@ -151,6 +154,9 @@ class GitClient:
         return result.stdout
 
     def rename_branch(self, name: str) -> None:
+        if self._dry_run:
+            print(f"[dry run] would rename branch to: {name}")
+            return
         subprocess.run(["git", "branch", "-m", name], check=True)
 
     def get_stat(self, commit_hash: str) -> str:
@@ -174,9 +180,15 @@ class GitClient:
         return "".join(self.get_diff(h, context_lines) for h in hashes)
 
     def amend(self, message: str) -> None:
+        if self._dry_run:
+            print(f"[dry run] would amend: {message}")
+            return
         subprocess.run(["git", "commit", "--amend", "-m", message], check=True)
 
     def stage_all(self) -> None:
+        if self._dry_run:
+            print("[dry run] would run: git add -A")
+            return
         subprocess.run(["git", "add", "-A"], check=True)
 
     def has_staged_changes(self) -> bool:
@@ -186,6 +198,9 @@ class GitClient:
         return result.returncode != 0
 
     def commit(self, message: str) -> None:
+        if self._dry_run:
+            print(f"[dry run] would commit: {message}")
+            return
         subprocess.run(["git", "commit", "-m", message], check=True)
 
     def get_original_message(self, commit_hash: str) -> str:
@@ -205,6 +220,9 @@ class GitClient:
         hashes_to_reword: Optional[set[str]] = None,
         squash_hashes: Optional[set[str]] = None,
     ) -> None:
+        if self._dry_run:
+            print(f"[dry run] would apply {len(messages)} commit message(s)")
+            return
         messages_file.write_text("\n".join(messages) + "\n")
 
         counter_file = Path(tempfile.mktemp())

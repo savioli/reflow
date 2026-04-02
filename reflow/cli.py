@@ -72,6 +72,12 @@ class CLIParser:
             help="Prefix to prepend to generated branch name",
         )
         parser.add_argument(
+            "--dry-run",
+            "-n",
+            action="store_true",
+            help="Preview changes without applying any git mutations",
+        )
+        parser.add_argument(
             "-v",
             "--verbose",
             action="count",
@@ -147,6 +153,7 @@ class ConfigFactory:
             != "false",
             squash=args.squash,
             amend=args.amend,
+            dry_run=args.dry_run,
             prompt_template=file_cfg.get("commitPrompt") or git_cfg.get("commitPrompt"),
             branch_prompt_template=file_cfg.get("branchPrompt")
             or git_cfg.get("branchPrompt"),
