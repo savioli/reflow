@@ -21,13 +21,13 @@ class Reworder:
             if not hashes:
                 print("No checkpoint commits found on this branch.")
                 return
-            print(f"Rewording {len(hashes)} checkpoint commit(s)...")
+            print(f"Rewording {len(hashes)} checkpoint commits...")
         else:
             hashes = self._git.get_hashes(since)
             if not hashes:
                 print("No commits to reword.")
                 return
-            print(f"Rewording {len(hashes)} commit(s)...")
+            print(f"Rewording {len(hashes)} commits...")
 
         messages = self._generate(hashes)
         hashes_to_reword = (
@@ -39,14 +39,14 @@ class Reworder:
 
     def _generate(self, hashes: list[str]) -> list[str]:
         messages = []
-        count = len(hashes)
-        for i, commit_hash in enumerate(hashes, 1):
-            print(f"  [{i}/{count}] {commit_hash[:7]}")
+        print()
+        for commit_hash in hashes:
             diff = self._git.get_diff(commit_hash, self._config.context_lines)
             msg = self._generator.generate(
                 commit_hash, diff
             ) or self._git.get_original_message(commit_hash)
             messages.append(msg)
+            print(f"{commit_hash[:7]} reworded to {msg}")
         return messages
 
     def _confirm_and_apply(
@@ -56,24 +56,19 @@ class Reworder:
         messages: list[str],
         hashes_to_reword: Optional[set[str]] = None,
     ) -> None:
-        print("\nGenerated messages:")
-        print("───────────────────")
-        for commit_hash, msg in zip(hashes, messages):
-            print(f"  {commit_hash[:7]}  {msg}")
-        print()
-
         if not self._config.auto_accept and not self._config.dry_run:
-            confirm = input("Apply these messages? [Y/n] ").strip().lower()
+            confirm = input("\nApply these messages? [Y/n] ").strip().lower()
             if confirm == "n":
                 print("Aborted.")
                 return
 
+        print()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             messages_file = Path(f.name)
         try:
             self._git.rebase(
                 since, messages, messages_file, hashes_to_reword=hashes_to_reword
             )
-            print(f"\nDone. {len(messages)} commit(s) reworded.")
+            print(f"\nSuccessfully reworded {len(messages)} commits.")
         finally:
             messages_file.unlink(missing_ok=True)
