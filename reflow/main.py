@@ -48,7 +48,8 @@ def main() -> None:
         if not checkpoint_hashes:
             print("No checkpoint commits found on this branch.")
             sys.exit(0)
-        print(f"Squashing {len(checkpoint_hashes)} checkpoint commit(s)...")
+        n = len(checkpoint_hashes)
+        print(f"Squashing {n} checkpoint {'commit' if n == 1 else 'commits'}...")
         provider = ProviderFactory().create(config)
         combined_diff = git.get_combined_diff(checkpoint_hashes, config.context_lines)
         msg = MessageGenerator(provider, PromptBuilder(), config).generate(
@@ -68,7 +69,7 @@ def main() -> None:
             messages_file = Path(f.name)
         try:
             git.rebase(since, [msg], messages_file, squash_hashes=squash_hashes)
-            print(f"Done. {len(checkpoint_hashes)} checkpoint(s) squashed into: {msg}")
+            print(f"Done. {n} checkpoint {'commit' if n == 1 else 'commits'} squashed into: {msg}")
         finally:
             messages_file.unlink(missing_ok=True)
         return

@@ -21,13 +21,15 @@ class Reworder:
             if not hashes:
                 print("No checkpoint commits found on this branch.")
                 return
-            print(f"Rewording {len(hashes)} checkpoint commits...")
+            n = len(hashes)
+            print(f"Rewording {n} checkpoint {'commit' if n == 1 else 'commits'}...")
         else:
             hashes = self._git.get_hashes(since)
             if not hashes:
                 print("No commits to reword.")
                 return
-            print(f"Rewording {len(hashes)} commits...")
+            n = len(hashes)
+            print(f"Rewording {n} {'commit' if n == 1 else 'commits'}...")
 
         messages = self._generate(hashes)
         hashes_to_reword = (
@@ -69,6 +71,7 @@ class Reworder:
             self._git.rebase(
                 since, messages, messages_file, hashes_to_reword=hashes_to_reword
             )
-            print(f"\nSuccessfully reworded {len(messages)} commits.")
+            n = len(messages)
+            print(f"\nSuccessfully reworded {n} {'commit' if n == 1 else 'commits'}.")
         finally:
             messages_file.unlink(missing_ok=True)
