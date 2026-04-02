@@ -101,13 +101,13 @@ class ConfigFactory:
         default_provider = git_cfg.get("provider", "")
 
         use_ollama = (
-            args.ollama or "ollamaModel" in git_cfg or default_provider == "ollama"
+            args.ollama or "ollamaModel" in git_cfg or "ollamaUrl" in git_cfg or default_provider == "ollama"
         )
         use_openai = (
-            args.openai or "openaiModel" in git_cfg or default_provider == "openai"
+            args.openai or "openaiModel" in git_cfg or "openaiUrl" in git_cfg or default_provider == "openai"
         )
         use_claude = (
-            args.claude or "claudeModel" in git_cfg or default_provider == "claude"
+            args.claude or "claudeModel" in git_cfg or "claudeUrl" in git_cfg or default_provider == "claude"
         )
 
         if not (use_ollama or use_openai or use_claude):
