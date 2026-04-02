@@ -58,18 +58,18 @@ def main() -> None:
         if not msg:
             print("Error: could not generate commit message.", file=sys.stderr)
             sys.exit(1)
-        print(f"  Message: {msg}")
         if not config.auto_accept and not config.dry_run:
-            confirm = input("Squash checkpoints? [Y/n] ").strip().lower()
+            confirm = input(f"\nSquash into: {msg}\nProceed? [Y/n] ").strip().lower()
             if confirm == "n":
                 print("Aborted.")
                 return
+        print()
         squash_hashes = set(h[:7] for h in checkpoint_hashes)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             messages_file = Path(f.name)
         try:
             git.rebase(since, [msg], messages_file, squash_hashes=squash_hashes)
-            print(f"Done. {n} checkpoint {'commit' if n == 1 else 'commits'} squashed into: {msg}")
+            print(f"\nSuccessfully squashed {n} checkpoint {'commit' if n == 1 else 'commits'} into: {msg}")
         finally:
             messages_file.unlink(missing_ok=True)
         return
