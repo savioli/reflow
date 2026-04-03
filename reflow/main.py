@@ -114,17 +114,15 @@ def main() -> None:
             sys.exit(1)
         prefix = config.branch_prefix or _extract_branch_prefix(current)
         full_name = f"{prefix}/{bare_name}" if prefix else bare_name
-        print(f"  Current:   {current}")
-        print(f"  Generated: {full_name}")
-        if config.auto_accept or config.dry_run:
-            git.rename_branch(full_name)
-            if not config.dry_run:
-                print(f"Branch renamed to: {full_name}")
-        else:
-            confirm = input("Rename branch? [Y/n] ").strip().lower()
-            if confirm != "n":
-                git.rename_branch(full_name)
-                print(f"Branch renamed to: {full_name}")
+        print("Renaming branch...")
+        if not config.auto_accept and not config.dry_run:
+            confirm = input(f"\nRename to: {full_name}\nProceed? [Y/n] ").strip().lower()
+            if confirm == "n":
+                print("Aborted.")
+                return
+        git.rename_branch(full_name)
+        if not config.dry_run:
+            print(f"\nSuccessfully renamed branch to: {full_name}")
         return
 
     provider = ProviderFactory().create(config)
