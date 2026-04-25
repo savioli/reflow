@@ -34,11 +34,17 @@ class OllamaProvider(AIProvider):
     def check(self) -> None:
         try:
             self._client.list()
-        except Exception:
+        except self._ollama.ResponseError as exc:
+            print(f"Error: Ollama responded with an error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except self._ollama.RequestError as exc:
             print(
-                "Error: Ollama is not running.\nStart with: ollama serve",
+                f"Error: could not connect to Ollama: {exc}\nStart with: ollama serve",
                 file=sys.stderr,
             )
+            sys.exit(1)
+        except Exception as exc:
+            print(f"Error: unexpected failure checking Ollama: {exc}", file=sys.stderr)
             sys.exit(1)
 
     def _chat(self, prompt: str, schema: dict, system: str) -> dict:
