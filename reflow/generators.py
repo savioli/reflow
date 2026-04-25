@@ -1,5 +1,4 @@
 import re
-import subprocess
 import sys
 from typing import Optional
 
@@ -42,15 +41,12 @@ class MessageGenerator:
 class CheckpointGenerator:
     _PATTERN = re.compile(r"^Checkpoint #(\d+)$", re.IGNORECASE)
 
+    def __init__(self, git: GitClient) -> None:
+        self._git = git
+
     def next_message(self) -> str:
-        result = subprocess.run(
-            ["git", "log", "--format=%s"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
         max_n = 0
-        for line in result.stdout.splitlines():
+        for line in self._git.get_subjects():
             m = self._PATTERN.match(line.strip())
             if m:
                 max_n = max(max_n, int(m.group(1)))

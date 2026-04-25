@@ -104,6 +104,13 @@ class GitClient:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return [h for h in result.stdout.strip().splitlines() if h]
 
+    def get_subjects(self, since: str = "--root") -> list[str]:
+        cmd = ["git", "log", "--format=%s"]
+        if since != "--root":
+            cmd.append(f"{since}..HEAD")
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return [line for line in result.stdout.strip().splitlines() if line]
+
     def get_diff(self, commit_hash: str, context_lines: int) -> str:
         result = subprocess.run(
             [

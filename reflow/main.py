@@ -37,7 +37,7 @@ def main() -> None:
         if not config.dry_run and not git.has_staged_changes():
             print("Error: nothing to commit.", file=sys.stderr)
             sys.exit(1)
-        msg = CheckpointGenerator().next_message()
+        msg = CheckpointGenerator(git).next_message()
         print(f"Committing as: {msg}")
         git.commit(msg)
         return
