@@ -7,7 +7,7 @@ Reflow was built for developers who get into a flow state and do not want to sto
 ## Installation
 
 ```sh
-pip install .
+pip install git-reflow
 ```
 
 ### Usage
