@@ -163,6 +163,7 @@ export REFLOW_OPENAI_API_KEY=...
 export REFLOW_OLLAMA_API_KEY=...
 ```
 
-> **Note:** If multiple API keys are set and no explicit provider is configured,
-> reflow auto-selects in this order: Claude, OpenAI, Ollama.
-> To override, set `git config reflow.provider <provider>` or use `--claude`/`--openai`/`--ollama`.
+**Note** 
+If multiple API keys are set and no explicit provider is configured, reflow auto-selects in this order: Claude, OpenAI, Ollama.
+
+To override, set `git config reflow.provider <provider>` or use `--claude`, `--openai`, `--ollama`.
