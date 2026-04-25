@@ -228,6 +228,70 @@ class GitClient:
         )
         return result.stdout.strip()
 
+    def _squash_seq_script(self, squash_hashes: set[str]) -> str:
+        """Sequence editor script: reword first checkpoint, fixup the rest."""
+        return (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"cp_hashes = {repr(squash_hashes)}\n"
+            "p = sys.argv[1]\n"
+            "lines = open(p).read().splitlines()\n"
+            "cp_lines, other_lines = [], []\n"
+            "for line in lines:\n"
+            "    parts = line.split(None, 2)\n"
+            "    if parts and parts[0] == 'pick' and len(parts) >= 2 and parts[1][:7] in cp_hashes:\n"
+            "        cp_lines.append(line)\n"
+            "    else:\n"
+            "        other_lines.append(line)\n"
+            "result = []\n"
+            "for i, line in enumerate(cp_lines):\n"
+            "    parts = line.split(None, 2)\n"
+            "    if i == 0:\n"
+            "        result.append('reword ' + ' '.join(parts[1:]))\n"
+            "    else:\n"
+            "        result.append('fixup ' + ' '.join(parts[1:]))\n"
+            "result.extend(other_lines)\n"
+            "open(p, 'w').write('\\n'.join(result) + '\\n')\n"
+        )
+
+    def _selective_reword_seq_script(self, hashes_to_reword: set[str]) -> str:
+        """Sequence editor script: reword only matching hashes."""
+        return (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"hashes = {repr(hashes_to_reword)}\n"
+            "p = sys.argv[1]\n"
+            "lines = []\n"
+            "for line in open(p).read().splitlines():\n"
+            "    parts = line.split(None, 2)\n"
+            "    if parts and parts[0] == 'pick' and len(parts) >= 2 and parts[1][:7] in hashes:\n"
+            "        line = 'reword ' + ' '.join(parts[1:])\n"
+            "    lines.append(line)\n"
+            "open(p, 'w').write('\\n'.join(lines) + '\\n')\n"
+        )
+
+    def _reword_all_seq_script(self) -> str:
+        """Sequence editor script: reword every pick."""
+        return (
+            "#!/usr/bin/env python3\n"
+            "import sys, re\n"
+            "p = sys.argv[1]\n"
+            "content = open(p).read()\n"
+            "open(p, 'w').write(re.sub(r'^pick\\b', 'reword', content, flags=re.MULTILINE))\n"
+        )
+
+    def _msg_editor_script(self, counter_file: Path, messages_file: Path) -> str:
+        """Message editor script: replace commit message with next line from messages file."""
+        return (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"cf, mf = '{counter_file}', '{messages_file}'\n"
+            "n = int(open(cf).read().strip()) + 1\n"
+            "open(cf, 'w').write(str(n))\n"
+            "lines = open(mf).read().splitlines()\n"
+            "open(sys.argv[1], 'w').write((lines[n - 1] if n <= len(lines) else '') + '\\n')\n"
+        )
+
     def rebase(
         self,
         since: str,
@@ -245,69 +309,22 @@ class GitClient:
             cf.write("0")
         counter_file = Path(cf.name)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as sf:
-            pass
-        seq_editor = Path(sf.name)
         if squash_hashes is not None:
-            seq_editor.write_text(
-                "#!/usr/bin/env python3\n"
-                "import sys\n"
-                f"cp_hashes = {repr(squash_hashes)}\n"
-                "p = sys.argv[1]\n"
-                "lines = open(p).read().splitlines()\n"
-                "cp_lines, other_lines = [], []\n"
-                "for line in lines:\n"
-                "    parts = line.split(None, 2)\n"
-                "    if parts and parts[0] == 'pick' and len(parts) >= 2 and parts[1][:7] in cp_hashes:\n"
-                "        cp_lines.append(line)\n"
-                "    else:\n"
-                "        other_lines.append(line)\n"
-                "result = []\n"
-                "for i, line in enumerate(cp_lines):\n"
-                "    parts = line.split(None, 2)\n"
-                "    if i == 0:\n"
-                "        result.append('reword ' + ' '.join(parts[1:]))\n"
-                "    else:\n"
-                "        result.append('fixup ' + ' '.join(parts[1:]))\n"
-                "result.extend(other_lines)\n"
-                "open(p, 'w').write('\\n'.join(result) + '\\n')\n"
-            )
+            seq_content = self._squash_seq_script(squash_hashes)
         elif hashes_to_reword is not None:
-            seq_editor.write_text(
-                "#!/usr/bin/env python3\n"
-                "import sys\n"
-                f"hashes = {repr(hashes_to_reword)}\n"
-                "p = sys.argv[1]\n"
-                "lines = []\n"
-                "for line in open(p).read().splitlines():\n"
-                "    parts = line.split(None, 2)\n"
-                "    if parts and parts[0] == 'pick' and len(parts) >= 2 and parts[1][:7] in hashes:\n"
-                "        line = 'reword ' + ' '.join(parts[1:])\n"
-                "    lines.append(line)\n"
-                "open(p, 'w').write('\\n'.join(lines) + '\\n')\n"
-            )
+            seq_content = self._selective_reword_seq_script(hashes_to_reword)
         else:
-            seq_editor.write_text(
-                "#!/usr/bin/env python3\n"
-                "import sys, re\n"
-                "p = sys.argv[1]\n"
-                "content = open(p).read()\n"
-                "open(p, 'w').write(re.sub(r'^pick\\b', 'reword', content, flags=re.MULTILINE))\n"
-            )
+            seq_content = self._reword_all_seq_script()
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as sf:
+            sf.write(seq_content)
+        seq_editor = Path(sf.name)
         seq_editor.chmod(seq_editor.stat().st_mode | stat.S_IEXEC)
 
+        msg_content = self._msg_editor_script(counter_file, messages_file)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as mf:
-            pass
+            mf.write(msg_content)
         msg_editor = Path(mf.name)
-        msg_editor.write_text(
-            "#!/usr/bin/env python3\n"
-            "import sys\n"
-            f"cf, mf = '{counter_file}', '{messages_file}'\n"
-            "n = int(open(cf).read().strip()) + 1\n"
-            "open(cf, 'w').write(str(n))\n"
-            "lines = open(mf).read().splitlines()\n"
-            "open(sys.argv[1], 'w').write((lines[n - 1] if n <= len(lines) else '') + '\\n')\n"
-        )
         msg_editor.chmod(msg_editor.stat().st_mode | stat.S_IEXEC)
 
         try:
