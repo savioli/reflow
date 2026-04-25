@@ -125,6 +125,9 @@ def main() -> None:
             print(f"\nSuccessfully renamed branch to: {full_name}")
         return
 
+    if not args.reword and not config.branch and not config.amend and not config.squash:
+        CLIParser().parse(["--help"])
+
     provider = ProviderFactory().create(config)
     generator = MessageGenerator(provider, PromptBuilder(), config)
     Reworder(git, config, generator).run()

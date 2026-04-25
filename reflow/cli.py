@@ -85,6 +85,7 @@ class CLIParser:
             help="Verbosity: -v AI output, -vv prompts",
         )
         args = parser.parse_args(argv)
+        args.reword = reword
         args.checkpoint = checkpoint
         args.checkpoint_reword = checkpoint_reword
         return args
