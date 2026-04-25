@@ -36,7 +36,7 @@ class Reworder:
             set(h[:7] for h in hashes) if self._config.checkpoint_reword else None
         )
         self._confirm_and_apply(
-            since, hashes, messages, hashes_to_reword=hashes_to_reword
+            since, messages, hashes_to_reword=hashes_to_reword
         )
 
     def _generate(self, hashes: list[str]) -> list[str]:
@@ -54,7 +54,6 @@ class Reworder:
     def _confirm_and_apply(
         self,
         since: str,
-        hashes: list[str],
         messages: list[str],
         hashes_to_reword: Optional[set[str]] = None,
     ) -> None:

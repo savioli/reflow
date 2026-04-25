@@ -166,15 +166,6 @@ class GitClient:
             return
         subprocess.run(["git", "branch", "-m", name], check=True)
 
-    def get_stat(self, commit_hash: str) -> str:
-        result = subprocess.run(
-            ["git", "diff-tree", "--no-commit-id", "-r", "--stat", commit_hash],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout
-
     def get_checkpoint_hashes(self, since: str) -> list[str]:
         pattern = re.compile(r"^Checkpoint #\d+$", re.IGNORECASE)
         return [
