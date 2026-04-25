@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reflow"
+name = "git-reflow"
 version = "0.1.0"
 authors = [
     { name = "André Savioli", email = "andre.savioli@icloud.com" },
