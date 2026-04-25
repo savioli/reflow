@@ -19,6 +19,10 @@ BRANCH_SCHEMA = {
 
 
 class PromptBuilder:
+    def __init__(self) -> None:
+        self._warned_diff = False
+        self._warned_branch_diff = False
+
     _DEFAULT = (
         "Generate a git commit message for the diff below.\n"
         "\n"
@@ -55,7 +59,7 @@ class PromptBuilder:
         if (
             template
             and "{diff}" not in template
-            and not getattr(self, "_warned_diff", False)
+            and not self._warned_diff
         ):
             print(
                 "Warning: reflow.commitPrompt does not contain {diff} — the diff will not be included in the prompt.",
@@ -68,7 +72,7 @@ class PromptBuilder:
         if (
             template
             and "{diff}" not in template
-            and not getattr(self, "_warned_branch_diff", False)
+            and not self._warned_branch_diff
         ):
             print(
                 "Warning: reflow.branchPrompt does not contain {diff} — the diff will not be included in the prompt.",
