@@ -234,10 +234,13 @@ class GitClient:
             return
         messages_file.write_text("\n".join(messages) + "\n")
 
-        counter_file = Path(tempfile.mktemp())
-        counter_file.write_text("0")
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as cf:
+            cf.write("0")
+        counter_file = Path(cf.name)
 
-        seq_editor = Path(tempfile.mktemp(suffix=".py"))
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as sf:
+            pass
+        seq_editor = Path(sf.name)
         if squash_hashes is not None:
             seq_editor.write_text(
                 "#!/usr/bin/env python3\n"
@@ -286,7 +289,9 @@ class GitClient:
             )
         seq_editor.chmod(seq_editor.stat().st_mode | stat.S_IEXEC)
 
-        msg_editor = Path(tempfile.mktemp(suffix=".py"))
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as mf:
+            pass
+        msg_editor = Path(mf.name)
         msg_editor.write_text(
             "#!/usr/bin/env python3\n"
             "import sys\n"
