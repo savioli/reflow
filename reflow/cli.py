@@ -110,6 +110,7 @@ class ConfigFactory:
             args.claude or "claudeModel" in git_cfg or "claudeUrl" in git_cfg or default_provider == "claude"
         )
 
+        # Auto-detect provider from env vars (priority: Claude > OpenAI > Ollama)
         if not (use_ollama or use_openai or use_claude):
             if os.environ.get("REFLOW_ANTHROPIC_API_KEY"):
                 use_claude = True
